@@ -123,7 +123,7 @@ echo "rc=$?"
 
 Где вставить: раздел 3.7, рисунок 7. В report.md: МЕСТО ДЛЯ РИСУНКА 7.
 
-Важно: этот рисунок делать последним, после рисунков 8, 9 и 10. Команда make clean удаляет build, после чего запускать app-static, app-dynamic и elfloader будет нечем. Если очистка уже сделана, перед следующими скриншотами снова выполни make all.
+Важно: этот рисунок делать последним, после рисунков 8 и 9. Команда make clean удаляет build, после чего запускать app-static, app-dynamic и elfloader будет нечем. Если очистка уже сделана, перед следующими скриншотами снова выполни make all.
 
 Команды:
 make clean
@@ -173,57 +173,20 @@ sha256sum out-*.png
 Как оформить:
 Один скриншот. Если строки длинные, можно уменьшить шрифт терминала, но хеши должны читаться.
 
-РИСУНОК 10 — Проверка обработки ошибок
-
-Где вставить: раздел 3.8, рисунок 10. В report.md: МЕСТО ДЛЯ РИСУНКА 10.
-
-Команды для программы:
-./build/app-static; echo "rc=$?"
-./build/app-static font.ttf; echo "rc=$?"
-./build/app-static /no/such/font.ttf out.png TRSPO; echo "rc=$?"
-./build/app-static font.ttf /proc/out.png TRSPO; echo "rc=$?"
-
-Команды для загрузчика:
-./build/elfloader; echo "rc=$?"
-./build/elfloader /no/such/blob font.ttf out.png TRSPO; echo "rc=$?"
-./build/elfloader report.md font.ttf out.png TRSPO; echo "rc=$?"
-head -c 100 build/app-blob > /tmp/bad.elf
-./build/elfloader /tmp/bad.elf font.ttf out.png TRSPO; echo "rc=$?"
-./build/elfloader build/app-static font.ttf out.png TRSPO; echo "rc=$?"
-
-Дополнительно, если хочешь показать отсутствие libz.so.1:
-mkdir -p /tmp/nolibs
-cp build/app-dynamic /tmp/nolibs/
-cd /tmp/nolibs
-./app-dynamic ~/Projects/gitrepo/trspo_labs/lab2/font.ttf out.png TRSPO
-echo "rc=$?"
-cd ~/Projects/gitrepo/trspo_labs/lab2
-
-Что должно быть видно:
-- сообщение usage при неверном числе аргументов;
-- cannot open font при отсутствующем шрифте;
-- cannot create png при недоступном пути;
-- dlopen ... cannot open shared object file при отсутствии libz.so.1;
-- для загрузчика: cannot open blob, el_init failed: not an ELF file, el_init failed: read error, el_relocate failed: bad relocation;
-- во всех случаях rc=0.
-
-Как оформить:
-Можно сделать два скриншота: первый с ошибками app-static и отсутствием libz.so.1, второй с ошибками elfloader. Обязательно оставить строки с echo "rc=$?", чтобы был виден код возврата.
-
 ДОПОЛНИТЕЛЬНО — размеры файлов
 
-Если хочешь подтвердить таблицу 5 скриншотом, выполни:
+Если хочешь подтвердить таблицу 4 скриншотом, выполни:
 size build/app-static build/app-dynamic build/app-blob build/elfloader
 
-Этот скриншот не обязателен: данные уже есть в таблице 5. Если вставляешь, размести его рядом с таблицей в разделе 3.8 без отдельного номера рисунка.
+Этот скриншот не обязателен: данные уже есть в таблице 4. Если вставляешь, размести его рядом с таблицей в разделе 3.8 без отдельного номера рисунка.
 
 ПОРЯДОК РАБОТЫ
 
 1. Сделай финальную сборку make clean && make all.
-2. Сделай рисунки 1, 3, 4, 5, 6, 8, 9 и 10.
+2. Сделай рисунки 1, 3, 4, 5, 6, 8 и 9.
 3. Сгенерируй out.png и вставь его как рисунок 2.
 4. Только после этого сделай рисунок 7 — очистку. Если после него понадобится ещё что-то запускать, снова выполни make all.
 5. Вставь рисунки в report.md на места МЕСТО ДЛЯ РИСУНКА N.
 6. Удали строки МЕСТО ДЛЯ РИСУНКА N, оставь подписи рисунков.
 7. Оформи таблицы из report.md как таблицы Google Docs.
-8. Проверь, что рисунки идут по порядку: 1 — структура, 2 — результат, 3 — зависимости, 4 — заголовок и динамическая секция blob, 5 — релокации и символы blob, 6 — сборка, 7 — очистка, 8 — запуск трёх версий, 9 — PNG-файлы, 10 — ошибки.
+8. Проверь, что рисунки идут по порядку: 1 — структура, 2 — результат, 3 — зависимости, 4 — заголовок и динамическая секция blob, 5 — релокации и символы blob, 6 — сборка, 7 — очистка, 8 — запуск трёх версий, 9 — PNG-файлы.
