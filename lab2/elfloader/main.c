@@ -3,11 +3,13 @@
 
 #include <elf.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 extern int _setjmp(jmp_buf env);
@@ -64,6 +66,13 @@ static void fill_api(struct host_api *api)
     api->setjmp_fn = _setjmp;
     api->longjmp_fn = longjmp;
     api->errno_location = __errno_location;
+    api->open_fn = (int (*)(const char *, int, mode_t))open;
+    api->close_fn = close;
+    api->read_fn = read;
+    api->fcntl_fn = (int (*)(int, int, int))fcntl;
+    api->fstat_fn = fstat;
+    api->mmap_fn = mmap;
+    api->munmap_fn = munmap;
     api->stderr_file = stderr;
     api->stdout_file = stdout;
     api->abort_fn = abort;

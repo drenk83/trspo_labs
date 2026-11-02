@@ -7,7 +7,10 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 struct host_api {
     FILE *(*fopen)(const char *path, const char *mode);
@@ -66,6 +69,16 @@ struct host_api {
     int (*setjmp_fn)(jmp_buf env);
     void (*longjmp_fn)(jmp_buf env, int val);
     int *(*errno_location)(void);
+
+    /* Штатный unix-слой FreeType открывает файл через open/mmap, не через fopen. */
+    int (*open_fn)(const char *path, int flags, mode_t mode);
+    int (*close_fn)(int fd);
+    ssize_t (*read_fn)(int fd, void *buf, size_t count);
+    int (*fcntl_fn)(int fd, int cmd, int arg);
+    int (*fstat_fn)(int fd, struct stat *st);
+    void *(*mmap_fn)(void *addr, size_t length, int prot, int flags, int fd,
+                     off_t offset);
+    int (*munmap_fn)(void *addr, size_t length);
 
     FILE *stderr_file;
     FILE *stdout_file;

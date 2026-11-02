@@ -5,9 +5,11 @@
  */
 #include "host_api.h"
 
+#include <fcntl.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 
 /* glibc headers turn some names into _Generic macros. The blob must
  * export the real functions the libraries call. */
@@ -202,7 +204,9 @@ char *strerror(int errnum)
     return (api && api->strerror) ? api->strerror(errnum) : (char *)"unknown";
 }
 
-long strtol(const char *nptr, char **endptr, int base)
+/* glibc объявляет strtol с asm-именем __isoc23_strtol. Штатные библиотеки
+ * зовут символ strtol, поэтому здесь другое имя и псевдоним ниже. */
+long blob_strtol(const char *nptr, char **endptr, int base)
 {
     return (api && api->strtol) ? api->strtol(nptr, endptr, base) : 0;
 }
@@ -322,3 +326,57 @@ void abort(void)
     for (;;)
         ;
 }
+
+int blob_open(const char *path, int flags, ...)
+{
+    return (api && api->open_fn) ? api->open_fn(path, flags, 0) : -1;
+}
+
+int blob_close(int fd)
+{
+    return (api && api->close_fn) ? api->close_fn(fd) : -1;
+}
+
+ssize_t blob_read(int fd, void *buf, size_t count)
+{
+    return (api && api->read_fn) ? api->read_fn(fd, buf, count) : -1;
+}
+
+int blob_fcntl(int fd, int cmd, ...)
+{
+    va_list ap;
+    int arg;
+
+    va_start(ap, cmd);
+    arg = va_arg(ap, int);
+    va_end(ap);
+    return (api && api->fcntl_fn) ? api->fcntl_fn(fd, cmd, arg) : -1;
+}
+
+int blob_fstat(int fd, struct stat *st)
+{
+    return (api && api->fstat_fn) ? api->fstat_fn(fd, st) : -1;
+}
+
+void *blob_mmap(void *addr, size_t length, int prot, int flags, int fd,
+                       off_t offset)
+{
+    return (api && api->mmap_fn) ? api->mmap_fn(addr, length, prot, flags, fd, offset)
+                                 : (void *)-1;
+}
+
+int blob_munmap(void *addr, size_t length)
+{
+    return (api && api->munmap_fn) ? api->munmap_fn(addr, length) : -1;
+}
+
+__asm__(
+    ".globl strtol\n\t.set strtol, blob_strtol\n\t"
+    ".globl open\n\t.set open, blob_open\n\t"
+    ".globl close\n\t.set close, blob_close\n\t"
+    ".globl read\n\t.set read, blob_read\n\t"
+    ".globl fcntl\n\t.set fcntl, blob_fcntl\n\t"
+    ".globl fstat\n\t.set fstat, blob_fstat\n\t"
+    ".globl mmap\n\t.set mmap, blob_mmap\n\t"
+    ".globl munmap\n\t.set munmap, blob_munmap\n\t"
+);

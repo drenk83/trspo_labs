@@ -1,7 +1,10 @@
 BUILD := ../build
 OBJDIR := object_files
 
-INCLUDES := -I../freetype/include -I../libpng -I../zlib -I.
+# Заголовки — из установки штатной сборки библиотек, не из исходников.
+INCLUDES := -I../build/prefix/include/freetype2 \
+	-I../build/prefix/include/libpng16 \
+	-I../build/prefix/include -I.
 HOST_CFLAGS := -Wall -Wextra -O2 -fPIC -fno-stack-protector \
 	-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -MMD -MP $(INCLUDES)
 BLOB_CFLAGS := $(HOST_CFLAGS) -fPIE -fno-builtin -fno-asynchronous-unwind-tables
