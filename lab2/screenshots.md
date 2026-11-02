@@ -179,6 +179,14 @@ sha256sum out-*.png
 ./build/app-static /no/such/font.ttf out.png TRSPO; echo "rc=$?"
 ./build/app-static font.ttf /proc/out.png TRSPO; echo "rc=$?"
 
+Ошибки загрузчика:
+./build/elfloader; echo "rc=$?"
+./build/elfloader /no/such/blob font.ttf out.png TRSPO; echo "rc=$?"
+./build/elfloader report.md font.ttf out.png TRSPO; echo "rc=$?"
+head -c 100 build/app-blob > /tmp/bad.elf
+./build/elfloader /tmp/bad.elf font.ttf out.png TRSPO; echo "rc=$?"
+./build/elfloader build/app-static font.ttf out.png TRSPO; echo "rc=$?"
+
 Дополнительно, если хочешь показать отсутствие libz.so.1:
 mkdir -p /tmp/nolibs
 cp build/app-dynamic /tmp/nolibs/
@@ -192,10 +200,11 @@ cd ~/Projects/gitrepo/trspo_labs/lab2
 - cannot open font при отсутствующем шрифте;
 - cannot create png при недоступном пути;
 - dlopen ... cannot open shared object file при отсутствии libz.so.1;
+- для загрузчика: cannot open blob, el_init failed: not an ELF file, el_init failed: read error, el_relocate failed: bad relocation;
 - во всех случаях rc=0.
 
 Как оформить:
-Один или два скриншота. Обязательно оставить строки с echo "rc=$?", чтобы был виден код возврата.
+Можно сделать два скриншота: первый с ошибками app-static и отсутствием libz.so.1, второй с ошибками elfloader. Обязательно оставить строки с echo "rc=$?", чтобы был виден код возврата.
 
 РИСУНОК 2 — Результат работы программы
 
