@@ -1,0 +1,324 @@
+/* Blob собран с -nostdlib, своей libc у него нет.
+ * Библиотеки всё равно зовут malloc, fopen и остальные имена.
+ * Каждая функция ниже только передаёт вызов в таблицу, которую дал загрузчик.
+ * host_install записывает эту таблицу в самом начале blob_entry.
+ */
+#include "host_api.h"
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* glibc headers turn some names into _Generic macros. The blob must
+ * export the real functions the libraries call. */
+#undef memchr
+#undef memcpy
+#undef memmove
+#undef memset
+#undef memcmp
+#undef strchr
+#undef strrchr
+#undef strstr
+#undef strcmp
+#undef strncmp
+#undef strcpy
+#undef strncpy
+#undef strcat
+#undef strlen
+#undef stpcpy
+
+int (*host_setjmp_fn)(jmp_buf);
+void (*host_longjmp_fn)(jmp_buf, int);
+
+FILE *stderr;
+FILE *stdout;
+
+static const struct host_api *api;
+
+void host_install(const struct host_api *src)
+{
+    api = src;
+    host_setjmp_fn = src ? src->setjmp_fn : NULL;
+    host_longjmp_fn = src ? src->longjmp_fn : NULL;
+    if (src) {
+        stderr = src->stderr_file;
+        stdout = src->stdout_file;
+    }
+}
+
+FILE *fopen(const char *path, const char *mode)
+{
+    return (api && api->fopen) ? api->fopen(path, mode) : NULL;
+}
+
+int fclose(FILE *stream)
+{
+    return (api && api->fclose) ? api->fclose(stream) : EOF;
+}
+
+size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream)
+{
+    return (api && api->fread) ? api->fread(ptr, size, nmemb, stream) : 0;
+}
+
+size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
+{
+    return (api && api->fwrite) ? api->fwrite(ptr, size, nmemb, stream) : 0;
+}
+
+int fseek(FILE *stream, long offset, int whence)
+{
+    return (api && api->fseek) ? api->fseek(stream, offset, whence) : -1;
+}
+
+long ftell(FILE *stream)
+{
+    return (api && api->ftell) ? api->ftell(stream) : -1L;
+}
+
+int fflush(FILE *stream)
+{
+    return (api && api->fflush) ? api->fflush(stream) : EOF;
+}
+
+int ferror(FILE *stream)
+{
+    return (api && api->ferror) ? api->ferror(stream) : 1;
+}
+
+int fputc(int c, FILE *stream)
+{
+    return (api && api->fputc) ? api->fputc(c, stream) : EOF;
+}
+
+int remove(const char *pathname)
+{
+    return (api && api->remove) ? api->remove(pathname) : -1;
+}
+
+void *malloc(size_t size)
+{
+    return (api && api->malloc) ? api->malloc(size) : NULL;
+}
+
+void *calloc(size_t nmemb, size_t size)
+{
+    return (api && api->calloc) ? api->calloc(nmemb, size) : NULL;
+}
+
+void *realloc(void *ptr, size_t size)
+{
+    return (api && api->realloc) ? api->realloc(ptr, size) : NULL;
+}
+
+void free(void *ptr)
+{
+    if (api && api->free)
+        api->free(ptr);
+}
+
+void *memcpy(void *dest, const void *src, size_t n)
+{
+    return (api && api->memcpy) ? api->memcpy(dest, src, n) : dest;
+}
+
+void *memmove(void *dest, const void *src, size_t n)
+{
+    return (api && api->memmove) ? api->memmove(dest, src, n) : dest;
+}
+
+void *memset(void *s, int c, size_t n)
+{
+    return (api && api->memset) ? api->memset(s, c, n) : s;
+}
+
+int memcmp(const void *a, const void *b, size_t n)
+{
+    return (api && api->memcmp) ? api->memcmp(a, b, n) : 0;
+}
+
+void *memchr(const void *s, int c, size_t n)
+{
+    return (api && api->memchr) ? api->memchr(s, c, n) : NULL;
+}
+
+size_t strlen(const char *s)
+{
+    return (api && api->strlen) ? api->strlen(s) : 0;
+}
+
+int strcmp(const char *a, const char *b)
+{
+    return (api && api->strcmp) ? api->strcmp(a, b) : 0;
+}
+
+int strncmp(const char *a, const char *b, size_t n)
+{
+    return (api && api->strncmp) ? api->strncmp(a, b, n) : 0;
+}
+
+char *strcpy(char *dest, const char *src)
+{
+    return (api && api->strcpy) ? api->strcpy(dest, src) : dest;
+}
+
+char *strncpy(char *dest, const char *src, size_t n)
+{
+    return (api && api->strncpy) ? api->strncpy(dest, src, n) : dest;
+}
+
+char *strcat(char *dest, const char *src)
+{
+    return (api && api->strcat) ? api->strcat(dest, src) : dest;
+}
+
+char *strchr(const char *s, int c)
+{
+    return (api && api->strchr) ? api->strchr(s, c) : NULL;
+}
+
+char *strrchr(const char *s, int c)
+{
+    return (api && api->strrchr) ? api->strrchr(s, c) : NULL;
+}
+
+char *strstr(const char *haystack, const char *needle)
+{
+    return (api && api->strstr) ? api->strstr(haystack, needle) : NULL;
+}
+
+char *stpcpy(char *dest, const char *src)
+{
+    return (api && api->stpcpy) ? api->stpcpy(dest, src) : dest;
+}
+
+double strtod(const char *nptr, char **endptr)
+{
+    return (api && api->strtod) ? api->strtod(nptr, endptr) : 0.0;
+}
+
+char *strerror(int errnum)
+{
+    return (api && api->strerror) ? api->strerror(errnum) : (char *)"unknown";
+}
+
+long strtol(const char *nptr, char **endptr, int base)
+{
+    return (api && api->strtol) ? api->strtol(nptr, endptr, base) : 0;
+}
+
+char *getenv(const char *name)
+{
+    return (api && api->getenv) ? api->getenv(name) : NULL;
+}
+
+int printf(const char *fmt, ...)
+{
+    va_list ap;
+    int result;
+
+    if (!api || !api->vprintf)
+        return -1;
+    va_start(ap, fmt);
+    result = api->vprintf(fmt, ap);
+    va_end(ap);
+    return result;
+}
+
+int sprintf(char *buf, const char *fmt, ...)
+{
+    va_list ap;
+    int result;
+
+    if (!api || !api->vsprintf)
+        return -1;
+    va_start(ap, fmt);
+    result = api->vsprintf(buf, fmt, ap);
+    va_end(ap);
+    return result;
+}
+
+int fprintf(FILE *stream, const char *fmt, ...)
+{
+    va_list ap;
+    int result;
+
+    if (!api || !api->vfprintf)
+        return -1;
+    va_start(ap, fmt);
+    result = api->vfprintf(stream, fmt, ap);
+    va_end(ap);
+    return result;
+}
+
+int snprintf(char *buf, size_t n, const char *fmt, ...)
+{
+    va_list ap;
+    int result;
+
+    if (!api || !api->vsnprintf)
+        return -1;
+    va_start(ap, fmt);
+    result = api->vsnprintf(buf, n, fmt, ap);
+    va_end(ap);
+    return result;
+}
+
+void qsort(void *base, size_t nmemb, size_t size,
+           int (*compar)(const void *, const void *))
+{
+    if (api && api->qsort)
+        api->qsort(base, nmemb, size, compar);
+}
+
+double pow(double x, double y)
+{
+    return (api && api->pow) ? api->pow(x, y) : 0.0;
+}
+
+double frexp(double x, int *exp)
+{
+    return (api && api->frexp) ? api->frexp(x, exp) : 0.0;
+}
+
+double modf(double x, double *iptr)
+{
+    return (api && api->modf) ? api->modf(x, iptr) : 0.0;
+}
+
+double floor(double x)
+{
+    return (api && api->floor) ? api->floor(x) : 0.0;
+}
+
+double fabs(double x)
+{
+    return (api && api->fabs) ? api->fabs(x) : 0.0;
+}
+
+int clock_gettime(clockid_t clk, struct timespec *ts)
+{
+    return (api && api->clock_gettime) ? api->clock_gettime(clk, ts) : -1;
+}
+
+struct tm *gmtime(const time_t *timep)
+{
+    return (api && api->gmtime) ? api->gmtime(timep) : NULL;
+}
+
+int *__errno_location(void)
+{
+    static int fallback;
+
+    if (api && api->errno_location)
+        return api->errno_location();
+    return &fallback;
+}
+
+void abort(void)
+{
+    if (api && api->abort_fn)
+        api->abort_fn();
+    for (;;)
+        ;
+}

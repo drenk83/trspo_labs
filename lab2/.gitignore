@@ -1,0 +1,5 @@
+build/
+**/object_files/
+libpng/pnglibconf.h
+*.png
+!libpng/**/*.png
