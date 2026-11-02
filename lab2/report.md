@@ -70,7 +70,7 @@ FreeType | 2.10.0
 
 Позиционно-независимый исполняемый файл, или PIE, может быть загружен по произвольному адресу. Для этого код использует относительную адресацию, а все абсолютные адреса, зависящие от базы загрузки, описываются релокациями. Проще говоря, релокация — это запись «в этом месте лежит адрес, который нужно поправить после загрузки». В x86-64 наиболее распространена релокация R_X86_64_RELATIVE: по указанному смещению нужно записать значение «база загрузки плюс addend». Если в файле нет импортируемых символов, других релокаций может не быть.
 
-В blob-версии используется именно такая схема: файл собирается как PIE с флагами -fPIE и -pie, но без стандартной библиотеки, с флагом -nostdlib. Точка входа задаётся явно и называется blob_entry. Файл не содержит PT_INTERP и не имеет записей DT_NEEDED, поэтому загрузить его обычным динамическим загрузчиком нельзя. Вместо этого специальный загрузчик сам отображает сегменты PT_LOAD, применяет относительные релокации, выставляет права страниц и вызывает точку входа.
+В blob-версии используется именно такая схема: файл собирается как PIE с флагами -fPIE и -pie, но без стандартной библиотеки, с флагом -nostdlib. Точка входа задаётся явно и называется blob_entry. Файл не содержит PT_INTERP и не имеет записей DT_NEEDED, поэтому загрузить его обычным динамическим загрузчиком нельзя. Вместо этого библиотека elfload отображает сегменты PT_LOAD, применяет относительные релокации и вызывает точку входа.
 
 Поскольку у blob-файла нет своей стандартной библиотеки, все обращения к функциям libc должны быть заменены на вызовы через таблицу указателей. Загрузчик заполняет эту таблицу адресами функций своего процесса и передаёт её точке входа вместе с параметрами программы. Внутри blob-файла остаются небольшие обёртки, которые просто переходят по указателям из таблицы. Такой подход позволяет использовать статические библиотеки zlib, libpng и FreeType, не компонуя с ними libc.
 
@@ -114,7 +114,7 @@ app/host_api.h | Описание структуры параметров blob �
 app/host_shim.c | Обёртки функций libc для blob-версии
 app/setjmp_stub.S | Переход к setjmp и longjmp загрузчика
 app/blob.map | Скрытие всех символов blob-файла
-elfloader/ | Исходный текст загрузчика blob-файла и его Makefile
+elfloader/ | Обёртка загрузчика, исходники библиотеки elfload и Makefile
 zlib/ | Исходные тексты zlib и её штатная система сборки
 libpng/ | Исходные тексты libpng и её штатная система сборки
 freetype/ | Исходные тексты FreeType и её штатная система сборки
@@ -373,7 +373,7 @@ gcc -o build/app-static object_files/static/main.o object_files/funcs.o \
 
 Проверка зависимостей показывает, что libpng, libz и libfreetype в списке динамических зависимостей отсутствуют. При этом libc и libm остаются динамическими, что соответствует требованию статической компоновки именно трёх библиотек. Размер app-static составляет около 1,01 МБ, что значительно больше динамической версии, потому что код трёх библиотек находится внутри файла.
 
-В статической версии время загрузки библиотек равно нулю: к моменту входа в main все три библиотеки уже являются частью образа программы. Значение load в выводе программы поэтому всегда равно 0.000000, а общее время total включает только инициализацию FreeType, отрисовку текста и запись PNG. По результатам пяти запусков total составило примерно от 0,864 до 0,993 мс.
+В статической версии время загрузки библиотек равно нулю: к моменту входа в main все три библиотеки уже являются частью образа программы. Значение load в выводе программы поэтому всегда равно 0.000000, а общее время total включает только инициализацию FreeType, отрисовку текста и запись PNG. По результатам контрольных запусков total составило примерно от 0,85 до 1,00 мс.
 
 МЕСТО ДЛЯ СКРИНШОТА 2
 
@@ -436,7 +436,7 @@ ok &= bind(libpng, "png_write_image", &p_png_write_image);
 
 После открытия библиотек функция bind вызывает dlsym для каждой нужной функции и сохраняет полученный адрес в соответствующем указателе. В заголовочном файле dynload.h эти указатели подменяют обычные имена функций с помощью директив #define. Благодаря этому funcs.c выглядит одинаково для статической и динамической сборок: в нём вызываются FT_New_Face, png_write_image и другие обычные имена, но в динамической сборке они раскрываются в обращения к указателям.
 
-Проверка ldd показывает, что app-dynamic зависит только от libc, а libpng, libz и libfreetype в списке отсутствуют. При этом readelf -d для libpng.so и libfreetype.so показывает зависимость от libz.so.1, то есть эти библиотеки используют zlib совместно. Время загрузки в динамической версии составило примерно от 0,148 до 0,215 мс, а общее время — от 0,991 до 1,171 мс. Разница между total и load примерно соответствует времени отрисовки и записи PNG.
+Проверка ldd показывает, что app-dynamic зависит только от libc, а libpng, libz и libfreetype в списке отсутствуют. При этом readelf -d для libpng.so и libfreetype.so показывает зависимость от libz.so.1, то есть эти библиотеки используют zlib совместно. Время загрузки в динамической версии составило примерно от 0,14 до 0,23 мс, а общее время — от 0,97 до 1,19 мс. Разница между total и load примерно соответствует времени отрисовки и записи PNG.
 
 3.5 Blob-версия
 
@@ -483,68 +483,50 @@ __sigsetjmp:
 
 Загрузчик заполняет host_api, передаёт структуру blob_params в точку входа, после чего blob-файл работает как обычная программа, но все внешние функции вызываются через таблицу указателей. Размер app-blob составляет около 1,01 МБ, поскольку три библиотеки вшиты в него статически.
 
-3.6 Загрузчик ELF
+3.6 Загрузчик ELF на основе elfload
 
-Загрузчик build/elfloader читает blob-файл с диска, проверяет его заголовок и отображает сегменты в память. Алгоритм работы загрузчика состоит из следующих шагов:
+Загрузчик build/elfloader построен на библиотеке erincandescent/elfload [4]. Исходники библиотеки лежат в elfloader/elfload, а elfloader/main.c содержит небольшую обёртку, которая связывает elfload с нашей таблицей функций libc и структурой blob_params.
 
-1. Прочитать файл целиком в буфер.
-2. Проверить магические числа ELF, класс ELF64, порядок байтов, архитектуру x86-64 и тип ET_DYN.
-3. Пройти по программным заголовкам, найти все сегменты PT_LOAD, вычислить минимальный и максимальный виртуальные адреса и общий размер образа.
-4. Выделить память через mmap с правами на чтение и запись.
-5. Скопировать сегменты из файла в память и обнулить хвосты BSS, у которых p_memsz больше p_filesz.
-6. Найти сегмент PT_DYNAMIC и таблицу релокаций DT_RELA.
-7. Применить релокации R_X86_64_RELATIVE: записать по адресу «база плюс r_offset» значение «база плюс r_addend». В текущей сборке таких релокаций 1308.
-8. Выставить права страниц через mprotect в соответствии с флагами сегментов.
-9. Вызвать функцию по адресу «база плюс e_entry», передав ей структуру blob_params.
-10. После возврата освободить отображённую память через munmap.
+Алгоритм работы загрузчика состоит из следующих шагов:
 
-Фрагмент функции apply_relocations:
+1. Открыть blob-файл и передать elfload callback для чтения через pread.
+2. Вызвать el_init: библиотека читает ELF-заголовок, проверяет класс, порядок байтов, архитектуру и тип, находит сегменты PT_LOAD и PT_DYNAMIC, вычисляет размер образа и выравнивание.
+3. Выделить память через mmap размером ctx.memsz с правами на чтение, запись и исполнение.
+4. Записать адрес отображения в ctx.base_load_paddr и ctx.base_load_vaddr.
+5. Вызвать el_load: библиотека читает сегменты PT_LOAD в память и обнуляет BSS.
+6. Вызвать el_relocate: библиотека применяет релокации R_X86_64_RELATIVE. В текущей сборке их 1308.
+7. Вычислить адрес точки входа как «база плюс ctx.ehdr.e_entry» и вызвать blob_entry с указателем на blob_params.
+8. Освободить память через munmap и закрыть файл.
 
-static int apply_relocations(uintptr_t bias, Elf64_Dyn *dynamic)
-{
-    Elf64_Rela *rela = NULL;
-    Elf64_Xword rela_size = 0;
-    Elf64_Xword rela_ent = sizeof(Elf64_Rela);
+Фрагмент обёртки, показывающий основные вызовы:
 
-    for (Elf64_Dyn *entry = dynamic; entry->d_tag != DT_NULL; entry++) {
-        if (entry->d_tag == DT_NEEDED) {
-            printf("blob has an import (DT_NEEDED)\n");
-            return 0;
-        }
-        if (entry->d_tag == DT_RELA)
-            rela = (Elf64_Rela *)(bias + entry->d_un.d_ptr);
-        else if (entry->d_tag == DT_RELASZ)
-            rela_size = entry->d_un.d_val;
-        else if (entry->d_tag == DT_RELAENT)
-            rela_ent = entry->d_un.d_val;
-    }
-    if (!rela || rela_ent == 0)
-        return 1;
+el_ctx ctx;
+memset(&ctx, 0, sizeof ctx);
+ctx.pread = pread_cb;
 
-    for (Elf64_Xword offset = 0; offset < rela_size; offset += rela_ent) {
-        Elf64_Rela *item = (Elf64_Rela *)((unsigned char *)rela + offset);
-        unsigned int type = ELF64_R_TYPE(item->r_info);
-        uint64_t *slot;
+el_init(&ctx);
 
-        if (type == R_X86_64_NONE)
-            continue;
-        if (type != R_X86_64_RELATIVE) {
-            printf("unsupported relocation type %u\n", type);
-            return 0;
-        }
-        slot = (uint64_t *)(bias + item->r_offset);
-        *slot = bias + (uint64_t)item->r_addend;
-    }
-    return 1;
-}
+mapping = mmap(NULL, ctx.memsz, PROT_READ | PROT_WRITE | PROT_EXEC,
+               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+ctx.base_load_paddr = ctx.base_load_vaddr = (Elf_Addr)(uintptr_t)mapping;
 
-Функция load_blob сначала вычисляет границы образа и отображает его целиком, затем копирует сегменты и применяет релокации. Права страниц выставляются после релокаций, потому что на этапе копирования и записи адресов память должна быть доступна на запись. После mprotect код становится доступен на исполнение, данные — на чтение и запись, а неисполняемые страницы — только на чтение.
+el_load(&ctx, alloc_cb);
+el_relocate(&ctx);
+
+entry = (int (*)(struct blob_params *))((uintptr_t)mapping + ctx.ehdr.e_entry);
+entry(&params);
+
+munmap(mapping, ctx.memsz);
+
+В реальном коде после каждого вызова проверяется el_status и печатается сообщение об ошибке. Библиотека elfload поддерживает только релокации R_AMD64_RELATIVE и R_AMD64_NONE. Для нашего blob этого достаточно: в нём нет импортируемых символов, нет DT_NEEDED, а все 1308 релокаций имеют тип R_X86_64_RELATIVE. Если бы в blob появились GLOB_DAT или JUMP_SLOT, загрузчик вернул бы ошибку EL_BADREL.
+
+Для простоты, как в примере upstream, память отображается сразу с правами RWX. Это позволяет загрузить сегменты, применить релокации и сразу передать управление точке входа без отдельного mprotect. При необходимости можно добавить mprotect по сегментам, но для лабораторной это не требуется.
 
 Запуск blob-версии выполняется командой:
 
 ./build/elfloader build/app-blob font.ttf out.png TRSPO
 
-Загрузчик передаёт в blob_params пути к шрифту и PNG, текст сообщения и заполненную таблицу функций. Blob-файл печатает время загрузки, версию zlib и общее время, после чего загрузчик освобождает память. В текущей реализации загрузчик написан самостоятельно; по назначению и набору действий он повторяет идею загрузчика elf-loader [4], но не ищет символ main, а использует адрес e_entry из ELF-заголовка.
+Загрузчик передаёт в blob_params пути к шрифту и PNG, текст сообщения и заполненную таблицу функций. Blob-файл печатает время загрузки, версию zlib и общее время, после чего загрузчик освобождает память. В текущей реализации используется библиотека elfload [4]; обёртка не ищет символ main, а использует адрес e_entry из ELF-заголовка.
 
 3.7 Корневой Makefile и инкрементная сборка
 
@@ -598,9 +580,9 @@ make static без изменений | ничего не компилирует
 Таблица 5 — Результаты замеров времени
 
 Версия | Время загрузки, мс | Общее время, мс
-static | 0 | 0,864–0,993
-dynamic | 0,148–0,215 | 0,991–1,171
-blob | 0 | 0,853–0,933
+static | 0 | 0,85–1,00
+dynamic | 0,14–0,23 | 0,97–1,19
+blob | 0 | 0,80–0,94
 
 Размеры и характеристики исполняемых файлов приведены в таблице 6.
 
@@ -610,7 +592,7 @@ blob | 0 | 0,853–0,933
 app-static | 1011000 | 882213 | 26632 | 8
 app-dynamic | 21952 | 8658 | 712 | 168
 app-blob | 1008808 | 880165 | 25912 | 48
-elfloader | 22776 | 8555 | 1080 | 48
+elfloader | 23208 | 9828 | 1076 | 48
 
 Проверка файлов показана на рисунке 9.
 
@@ -633,17 +615,17 @@ elfloader | 22776 | 8555 | 1080 | 48
 
 Рисунок 10 — Проверка обработки ошибок
 
-Таким образом, все три версии собираются, запускаются и дают идентичный результат. Статическая версия не зависит от трёх библиотек при запуске, динамическая версия загружает их явно и показывает время загрузки, blob-версия не имеет динамических зависимостей и загружается собственным загрузчиком.
+Таким образом, все три версии собираются, запускаются и дают идентичный результат. Статическая версия не зависит от трёх библиотек при запуске, динамическая версия загружает их явно и показывает время загрузки, blob-версия не имеет динамических зависимостей и загружается библиотекой elfload.
 
 4 ВЫВОДЫ
 
 В ходе лабораторной работы были изучены этапы сборки программы и особенности статической и динамической компоновки. Была разработана программа на языке C, которая с помощью FreeType загружает шрифт из TTF-файла, с помощью libpng и zlib формирует PNG-изображение с текстом и печатает время загрузки библиотек и общее время работы.
 
-Были собраны три версии программы. Статическая версия включает libz.a, libpng.a и libfreetype.a в исполняемый файл и не требует этих библиотек при запуске. Динамическая версия загружает разделяемые библиотеки через dlopen и dlsym, поэтому время загрузки можно измерить отдельно; оно составило около 0,15–0,22 мс. Blob-версия собрана без стандартной библиотеки, имеет одну точку входа blob_entry, не содержит DT_NEEDED и загружается собственным загрузчиком, который отображает сегменты PT_LOAD, применяет релокации R_X86_64_RELATIVE и передаёт точке входа структуру с параметрами и таблицей функций.
+Были собраны три версии программы. Статическая версия включает libz.a, libpng.a и libfreetype.a в исполняемый файл и не требует этих библиотек при запуске. Динамическая версия загружает разделяемые библиотеки через dlopen и dlsym, поэтому время загрузки можно измерить отдельно; оно составило около 0,14–0,23 мс. Blob-версия собрана без стандартной библиотеки, имеет одну точку входа blob_entry, не содержит DT_NEEDED и загружается библиотекой elfload, которая отображает сегменты PT_LOAD, применяет релокации R_X86_64_RELATIVE, а обёртка передаёт точке входа структуру с параметрами и таблицей функций.
 
 Все три версии дали одинаковый PNG-файл, что подтверждает корректность выбранной схемы. Инкрементная сборка была проверена: при изменении одного исходного файла пересобираются только связанные с ним объектные файлы и итоговый бинарник. Корневой Makefile собирает библиотеки, программу и загрузчик из исходного кода и поддерживает цели static, dynamic, blob, all и clean.
 
-Ограничениями текущей реализации являются: обработка текста как последовательности байт без полноценного декодирования UTF-8; использование собственного загрузчика вместо готового elf-loader; динамическая компоновка libc и libm в статической версии, что соответствует требованию статической компоновки только трёх библиотек, но не является полностью статической сборкой. Дополнительные задания 6.1 и 6.2 не выполнялись.
+Ограничениями текущей реализации являются: обработка текста как последовательности байт без полноценного декодирования UTF-8; поддержка загрузчиком elfload только релокаций R_AMD64_RELATIVE; динамическая компоновка libc и libm в статической версии, что соответствует требованию статической компоновки только трёх библиотек, но не является полностью статической сборкой. Дополнительные задания 6.1 и 6.2 не выполнялись.
 
 СПИСОК ИСПОЛЬЗУЕМЫХ ИСТОЧНИКОВ
 
@@ -919,148 +901,101 @@ struct host_api {
 
 ЛИСТИНГ А.5 — фрагмент elfloader/main.c
 
-static int apply_relocations(uintptr_t bias, Elf64_Dyn *dynamic)
+Функции fill_api и status_name опущены; ниже показана работа с библиотекой elfload.
+
+static bool pread_cb(el_ctx *ctx, void *dest, size_t nb, size_t offset)
 {
-    Elf64_Rela *rela = NULL;
-    Elf64_Xword rela_size = 0;
-    Elf64_Xword rela_ent = sizeof(Elf64_Rela);
+    ssize_t got;
 
-    for (Elf64_Dyn *entry = dynamic; entry->d_tag != DT_NULL; entry++) {
-        if (entry->d_tag == DT_NEEDED) {
-            printf("blob has an import (DT_NEEDED)\n");
-            return 0;
-        }
-        if (entry->d_tag == DT_RELA)
-            rela = (Elf64_Rela *)(bias + entry->d_un.d_ptr);
-        else if (entry->d_tag == DT_RELASZ)
-            rela_size = entry->d_un.d_val;
-        else if (entry->d_tag == DT_RELAENT)
-            rela_ent = entry->d_un.d_val;
-    }
-    if (!rela || rela_ent == 0)
-        return 1;
-
-    for (Elf64_Xword offset = 0; offset < rela_size; offset += rela_ent) {
-        Elf64_Rela *item = (Elf64_Rela *)((unsigned char *)rela + offset);
-        unsigned int type = ELF64_R_TYPE(item->r_info);
-        uint64_t *slot;
-
-        if (type == R_X86_64_NONE)
-            continue;
-        if (type != R_X86_64_RELATIVE) {
-            printf("unsupported relocation type %u\n", type);
-            return 0;
-        }
-        slot = (uint64_t *)(bias + item->r_offset);
-        *slot = bias + (uint64_t)item->r_addend;
-    }
-    return 1;
+    (void)ctx;
+    got = pread(blob_fd, dest, nb, (off_t)offset);
+    return got == (ssize_t)nb;
 }
 
-static int load_blob(unsigned char *file, size_t length, struct blob_params *params)
+static void *alloc_cb(el_ctx *ctx, Elf_Addr phys, Elf_Addr virt, Elf_Addr size)
 {
-    Elf64_Ehdr *ehdr;
-    Elf64_Phdr *phdr;
-    uintptr_t min_addr = ~(uintptr_t)0;
-    uintptr_t max_addr = 0;
-    long page;
-    uintptr_t span;
+    (void)ctx;
+    (void)phys;
+    (void)size;
+    return (void *)(uintptr_t)virt;
+}
+
+int main(int argc, char **argv)
+{
+    el_ctx ctx;
+    el_status status;
+    struct blob_params params;
     unsigned char *mapping;
-    uintptr_t bias;
-    Elf64_Dyn *dynamic = NULL;
+    size_t map_size;
     int (*entry)(struct blob_params *);
 
-    if (length < sizeof(Elf64_Ehdr))
-        return 0;
-    ehdr = (Elf64_Ehdr *)file;
-    if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG) != 0 ||
-        ehdr->e_ident[EI_CLASS] != ELFCLASS64 ||
-        ehdr->e_ident[EI_DATA] != ELFDATA2LSB ||
-        ehdr->e_machine != EM_X86_64 || ehdr->e_type != ET_DYN) {
-        printf("blob is not an x86-64 ET_DYN ELF\n");
-        return 0;
-    }
-    if (ehdr->e_phoff + (size_t)ehdr->e_phnum * ehdr->e_phentsize > length ||
-        ehdr->e_phentsize != sizeof(Elf64_Phdr)) {
-        printf("blob program headers are invalid\n");
-        return 0;
-    }
-    phdr = (Elf64_Phdr *)(file + ehdr->e_phoff);
-
-    for (int i = 0; i < ehdr->e_phnum; i++) {
-        uintptr_t end;
-        if (phdr[i].p_type != PT_LOAD)
-            continue;
-        if (phdr[i].p_offset + phdr[i].p_filesz > length) {
-            printf("blob segment is out of file\n");
-            return 0;
-        }
-        if (phdr[i].p_vaddr < min_addr)
-            min_addr = phdr[i].p_vaddr;
-        end = phdr[i].p_vaddr + phdr[i].p_memsz;
-        if (end > max_addr)
-            max_addr = end;
-    }
-    if (min_addr == ~(uintptr_t)0 || ehdr->e_entry == 0) {
-        printf("blob has no loadable entry\n");
+    if (argc != 5) {
+        printf("usage: %s blob font png text\n", argc > 0 ? argv[0] : "elfloader");
         return 0;
     }
 
-    page = sysconf(_SC_PAGESIZE);
-    min_addr &= ~(uintptr_t)(page - 1);
-    max_addr = (max_addr + (uintptr_t)page - 1) & ~(uintptr_t)(page - 1);
-    span = max_addr - min_addr;
-    mapping = mmap(NULL, span, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
-                   -1, 0);
+    blob_fd = open(argv[1], O_RDONLY);
+    if (blob_fd < 0) {
+        printf("cannot open blob '%s': %s\n", argv[1], strerror(errno));
+        return 0;
+    }
+
+    memset(&ctx, 0, sizeof ctx);
+    ctx.pread = pread_cb;
+
+    status = el_init(&ctx);
+    if (status != EL_OK) {
+        printf("el_init failed: %s (%d)\n", status_name(status), status);
+        close(blob_fd);
+        return 0;
+    }
+
+    if (ctx.memsz == 0) {
+        printf("blob has no loadable segments\n");
+        close(blob_fd);
+        return 0;
+    }
+
+    map_size = (size_t)ctx.memsz;
+    mapping = mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (mapping == MAP_FAILED) {
-        printf("mmap failed\n");
-        return 0;
-    }
-    bias = (uintptr_t)mapping - min_addr;
-
-    for (int i = 0; i < ehdr->e_phnum; i++) {
-        unsigned char *dest;
-        if (phdr[i].p_type == PT_DYNAMIC)
-            dynamic = (Elf64_Dyn *)(bias + phdr[i].p_vaddr);
-        if (phdr[i].p_type != PT_LOAD)
-            continue;
-        dest = (unsigned char *)(bias + phdr[i].p_vaddr);
-        memcpy(dest, file + phdr[i].p_offset, phdr[i].p_filesz);
-        if (phdr[i].p_memsz > phdr[i].p_filesz)
-            memset(dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
-    }
-
-    if (!dynamic || !apply_relocations(bias, dynamic)) {
-        munmap(mapping, span);
+        printf("mmap failed: %s\n", strerror(errno));
+        close(blob_fd);
         return 0;
     }
 
-    for (int i = 0; i < ehdr->e_phnum; i++) {
-        uintptr_t start;
-        uintptr_t end;
-        int prot = 0;
-        if (phdr[i].p_type != PT_LOAD)
-            continue;
-        start = (bias + phdr[i].p_vaddr) & ~(uintptr_t)(page - 1);
-        end = (bias + phdr[i].p_vaddr + phdr[i].p_memsz + (uintptr_t)page - 1) &
-              ~(uintptr_t)(page - 1);
-        if (phdr[i].p_flags & PF_R)
-            prot |= PROT_READ;
-        if (phdr[i].p_flags & PF_W)
-            prot |= PROT_WRITE;
-        if (phdr[i].p_flags & PF_X)
-            prot |= PROT_EXEC;
-        if (mprotect((void *)start, end - start, prot) != 0) {
-            printf("mprotect failed\n");
-            munmap(mapping, span);
-            return 0;
-        }
+    ctx.base_load_paddr = ctx.base_load_vaddr = (Elf_Addr)(uintptr_t)mapping;
+
+    status = el_load(&ctx, alloc_cb);
+    if (status != EL_OK) {
+        printf("el_load failed: %s (%d)\n", status_name(status), status);
+        munmap(mapping, map_size);
+        close(blob_fd);
+        return 0;
     }
 
-    entry = (int (*)(struct blob_params *))(bias + ehdr->e_entry);
-    entry(params);
-    munmap(mapping, span);
-    return 1;
+    status = el_relocate(&ctx);
+    if (status != EL_OK) {
+        printf("el_relocate failed: %s (%d)\n", status_name(status), status);
+        munmap(mapping, map_size);
+        close(blob_fd);
+        return 0;
+    }
+
+    memset(&params, 0, sizeof params);
+    params.font_path = argv[2];
+    params.png_path = argv[3];
+    params.text = argv[4];
+    fill_api(&params.api);
+
+    entry = (int (*)(struct blob_params *))((uintptr_t)mapping +
+                                            (uintptr_t)ctx.ehdr.e_entry);
+    entry(&params);
+
+    munmap(mapping, map_size);
+    close(blob_fd);
+    return 0;
 }
 
 ЛИСТИНГ А.6 — фрагмент app/Makefile
