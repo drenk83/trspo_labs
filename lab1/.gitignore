@@ -1,0 +1,48 @@
+# Visual Studio user/IDE state
+.vs/
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build output and intermediate dirs
+bin/
+obj/
+ipch/
+enc_temp_folder/
+
+# MSVC / linker intermediates
+*.obj
+*.iobj
+*.pch
+*.ipch
+*.pdb
+*.ipdb
+*.ilk
+*.idb
+*.exp
+*.lib
+*.tlog
+*.lastbuildstate
+*.recipe
+*.log
+*.aps
+*.ncb
+*.sdf
+*.opensdf
+*.opendb
+*.VC.db
+*.VC.opendb
+*.cache
+UpgradeLog.htm
+UpgradeLog*.htm
+
+# Built binaries
+*.exe
+*.dll
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store

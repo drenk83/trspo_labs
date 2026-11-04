@@ -1,0 +1,119 @@
+Этап 1 — сырые измерения
+=======================
+
+Дата: 2026-11-04
+Windows: Microsoft Windows 11 Pro 10.0.28000, 64-bit
+Visual Studio: 2026, версия 18.0 (18.10.12224.181)
+Тестовая программа: bin\x64\Debug\stage1_testapp.exe
+Конфигурация: Debug | x64, /Od, /Zi, /utf-8
+
+Примечание: измерения сняты до упрощения тестовой программы. В первой
+версии был вспомогательный режим dump и функция RunCall; в минимальной
+версии остался только цикл CreateFileW в main. Байты kernelbase.dll от
+этого не зависят, а строка breakpoint теперь 10.
+
+1. Вывод вспомогательного режима dump (первая версия testapp)
+----------------------
+
+[testapp] kernelbase.dll base = 00007FFDD1080000
+CreateFileW      : addr=00007FFDD1102B90 rva=0x00082B90 bytes=40 53 48 83 EC 50 8B 84 24 88 00 00 00 44 8B D0
+FindFirstFileW   : addr=00007FFDD10F8DF0 rva=0x00078DF0 bytes=40 53 48 83 EC 30 4C 8B C2 C7 44 24 28 00 00 00
+FindNextFileW    : addr=00007FFDD10FDDE0 rva=0x0007DDE0 bytes=48 89 5C 24 10 48 89 74 24 18 57 41 54 41 55 41
+CloseHandle      : addr=00007FFDD1103460 rva=0x00083460 bytes=40 53 48 83 EC 20 48 8B D9 83 F9 F4 74 67 83 F9
+
+Примечание: абсолютные адреса меняются из-за ASLR. В git и отчёт
+записываются RVA относительно базы kernelbase.dll, а не абсолютные адреса.
+
+2. Стек вызова в Visual Studio
+------------------------------
+
+Остановка: исходный breakpoint в testapp.cpp (в версии на момент
+снятия — строка 73, функция RunCall; в минимальной версии — строка 10,
+main), затем Step Into.
+
+frame 1: 00007ffdd1102b90 | KernelBase.dll              <- CreateFileW
+frame 2: RunCall          | stage1_testapp.exe          <- строка 73
+frame 3: wmain            | stage1_testapp.exe
+frame 4: invoke_main      | stage1_testapp.exe
+frame 5: __scrt_common_main_seh | stage1_testapp.exe
+frame 6: __scrt_common_main    | stage1_testapp.exe
+frame 7: wmainCRTStartup       | stage1_testapp.exe
+frame 8: 00007ffdd2074107      | kernel32.dll
+frame 9: 00007ffdd39a4d50      | ntdll.dll
+
+Вывод: тестовая программа действительно вызывает CreateFileW,
+управление приходит в kernelbase.dll через x64-стек вызовов.
+
+3. Дизассемблер Visual Studio
+------------------------------
+
+Адрес: 00007FFDD1102B90, окно Disassembly, символы kernelbase не загружены
+("No Symbols Loaded" — это нормально, дизассемблер работает по адресу).
+
+00007FFDD1102B90  push        rbx
+00007FFDD1102B92  sub         rsp,50h
+00007FFDD1102B96  mov         eax,dword ptr [rsp+88h]
+00007FFDD1102B9D  mov         r10d,eax
+00007FFDD1102BA0  and         r10d,7FB7h
+00007FFDD1102BA7  mov         dword ptr [rsp+30h],20h
+
+4. Границы инструкций и выбранная длина
+----------------------------------------
+
+CreateFileW:
+  40 53                  push rbx                  смещение 2
+  48 83 EC 50            sub rsp,50h               смещение 6
+  8B 84 24 88 00 00 00   mov eax,[rsp+88h]         смещение 13
+  => N = 13 (первая граница >= 5 байт)
+
+FindFirstFileW:
+  40 53                  push rbx                  смещение 2
+  48 83 EC 30            sub rsp,30h               смещение 6
+  4C 8B C2               mov r8,rdx                смещение 9
+  => N = 9
+
+FindNextFileW:
+  48 89 5C 24 10         mov [rsp+10h],rbx         смещение 5
+  48 89 74 24 18         mov [rsp+18h],rsi         смещение 10
+  57                     push rdi                  смещение 11
+  => N = 11
+
+CloseHandle (необязательная функция для сравнения):
+  40 53                  push rbx                  смещение 2
+  48 83 EC 20            sub rsp,20h               смещение 6
+  => N = 6 (минимальная граница >= 5)
+
+5. Итоговая таблица
+--------------------
+
+| Функция | RVA | N | Патч |
+|---|---:|---:|---|
+| CreateFileW | 0x00082B90 | 13 | E9 rel32 + 8 NOP |
+| FindFirstFileW | 0x00078DF0 | 9 | E9 rel32 + 4 NOP |
+| FindNextFileW | 0x0007DDE0 | 11 | E9 rel32 + 6 NOP |
+| CloseHandle | 0x00083460 | 6 | E9 rel32 + 1 NOP |
+
+6. Почему SIZE 11 недостаточно
+------------------------------
+
+В готовой лабораторной на Desktop стоят #define SIZE 11 и #define hideSIZE 11.
+На этой сборке Windows 11:
+
+- FindNextFileW: 11 байт совпадают с границей — работает;
+- FindFirstFileW: 11 байт режут инструкцию mov dword ptr [rsp+28h],0 — нельзя;
+- CreateFileW: 11 байт режут mov eax,[rsp+88h] — нельзя.
+
+Следовательно, для CreateFileW нужен N = 13, для FindFirstFileW — N = 9.
+На этапе 2 размер патча должен быть параметром класса HookPatch, а не
+глобальной константой.
+
+7. Что ещё учесть в HookPatch
+-----------------------------
+
+- rel32 = (int32_t)((uintptr_t)hook - ((uintptr_t)target + 5));
+  проверить, что значение влезает в signed 32-bit (±2 ГБ).
+- Трамплин: N байт оригинала + FF 25 00 00 00 00 + 8 байт адреса
+  (target + N). Итого N + 14 байт, а не N + 8.
+- Проверить, что в первых N байтах нет RIP-relative инструкций
+  (на снятых прологах их нет).
+- При ошибке VirtualAlloc/WriteProcessMemory откатывать уже записанный патч.
