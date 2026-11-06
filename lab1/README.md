@@ -9,7 +9,7 @@
 |---|---|---|
 | `src/hook` | `hook.dll` | `HookPatch`, режимы `-func` и `-hide` |
 | `src/monitor` | `monitor.exe` | CLI, инъекция `hook.dll`, pipe-клиент |
-| `src/victim` | `victim.exe` | тестовый процесс: перечисление и открытие файла |
+| `src/victim` | `victim.exe` | тестовый процесс: перечисление текущего каталога и открытие файла |
 
 `victim` — только тестовая цель, в поставку лабораторной не входит.
 Сданная лабораторная с Desktop (`C:\Users\winuser\Desktop\trspo\1`)
@@ -43,9 +43,13 @@ monitor.exe -name <processName> -hide <filePath>
 
 ## Мониторинг вызовов
 
+`victim` не принимает аргументов и работает в своём рабочем каталоге,
+поэтому запускать его нужно из `src\victim\data`, где лежат
+`aaa.txt`, `secret.txt` и `zzz.txt`.
+
 ```powershell
 $victim = Start-Process bin\x64\Debug\victim.exe -PassThru `
-    -WorkingDirectory src\victim
+    -WorkingDirectory src\victim\data
 Start-Sleep -Milliseconds 400
 bin\x64\Debug\monitor.exe -pid $victim.Id -func CreateFileW
 ```
@@ -61,17 +65,19 @@ bin\x64\Debug\monitor.exe -name victim.exe -func CreateFile
 
 ```powershell
 $victim = Start-Process bin\x64\Debug\victim.exe -PassThru `
-    -WorkingDirectory src\victim
+    -WorkingDirectory src\victim\data
 Start-Sleep -Milliseconds 400
 bin\x64\Debug\monitor.exe -pid $victim.Id -hide (Resolve-Path src\victim\data\secret.txt).Path
 Start-Sleep -Seconds 4
 Stop-Process -Id $victim.Id
 ```
 
-Victim ждёт 3 секунды перед первым перечислением, поэтому после
-`monitor` нужно дать ему время показать результат. Ожидаемо:
-`secret.txt` исчезает из перечисления, `CreateFileW` возвращает
-`ERROR_FILE_NOT_FOUND`, а `aaa.txt` и `zzz.txt` остаются.
+Victim печатает PID и полный путь к `secret.txt` — этот же путь можно
+передать в `-hide`. Victim ждёт 3 секунды перед первым перечислением,
+поэтому после `monitor` нужно дать ему время показать результат.
+Ожидаемо: `secret.txt` исчезает из перечисления (`entries=4`,
+`secret=no`), `CreateFileW` возвращает `ERROR_FILE_NOT_FOUND`
+(`open=fail err=2`), а `aaa.txt` и `zzz.txt` остаются.
 
 ## Как это работает
 
@@ -100,11 +106,12 @@ Victim ждёт 3 секунды перед первым перечислени�
 
 ## Документация
 
-- [ОТЧЁТ.md](ОТЧЁТ.md) — итоговый отчёт по лабораторной работе.
+- [ОТЧЁТ.md](ОТЧЁТ.md) — итоговый отчёт по лабораторной работе: титульный
+  лист, содержание, разделы 1–4, таблицы 1–5 и рисунки 1–5.
 - [docs/КАК_РАБОТАЕТ.md](docs/КАК_РАБОТАЕТ.md) — подробная техническая
   документация: инъекция, хуки, протокол, разбор кода и примеры.
-- [screenshots.md](screenshots.md) — какие скриншоты сделать и как
-  вставить их в отчёт.
+- [screenshots.md](screenshots.md) — какие рисунки осталось снять (1, 4, 5)
+  и как вставить их в отчёт; рисунки 2 и 3 уже в отчёте.
 - [docs/history](docs/history) — исторические заметки по этапам разработки
   (как разрабатывалась лабораторная; пути внутри относятся к старым
   коммитам).
