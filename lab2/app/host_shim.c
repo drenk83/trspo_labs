@@ -1,8 +1,4 @@
-/* Blob собран с -nostdlib, своей libc у него нет.
- * Библиотеки всё равно зовут malloc, fopen и остальные имена.
- * Каждая функция ниже только передаёт вызов в таблицу, которую дал загрузчик.
- * host_install записывает эту таблицу в самом начале blob_entry.
- */
+/* у blob нет libc: каждая функция ниже зовёт указатель из таблицы загрузчика */
 #include "host_api.h"
 
 #include <fcntl.h>
@@ -11,8 +7,7 @@
 #include <string.h>
 #include <sys/mman.h>
 
-/* glibc headers turn some names into _Generic macros. The blob must
- * export the real functions the libraries call. */
+/* glibc превращает эти имена в макросы, blob должен экспортировать функции */
 #undef memchr
 #undef memcpy
 #undef memmove
@@ -29,13 +24,13 @@
 #undef strlen
 #undef stpcpy
 
-int (*host_setjmp_fn)(jmp_buf);
-void (*host_longjmp_fn)(jmp_buf, int);
+int (*host_setjmp_fn)(jmp_buf);       /* куда прыгает стаб setjmp */
+void (*host_longjmp_fn)(jmp_buf, int); /* куда прыгает стаб longjmp */
 
-FILE *stderr;
-FILE *stdout;
+FILE *stderr; /* библиотеки пишут ошибки сюда */
+FILE *stdout; /* обычный вывод, его тоже даёт загрузчик */
 
-static const struct host_api *api;
+static const struct host_api *api; /* таблица, её ставит host_install */
 
 void host_install(const struct host_api *src)
 {
@@ -204,8 +199,7 @@ char *strerror(int errnum)
     return (api && api->strerror) ? api->strerror(errnum) : (char *)"unknown";
 }
 
-/* glibc объявляет strtol с asm-именем __isoc23_strtol. Штатные библиотеки
- * зовут символ strtol, поэтому здесь другое имя и псевдоним ниже. */
+/* имя blob_strtol, а не strtol: иначе glibc подменит его на __isoc23_strtol */
 long blob_strtol(const char *nptr, char **endptr, int base)
 {
     return (api && api->strtol) ? api->strtol(nptr, endptr, base) : 0;
@@ -312,7 +306,7 @@ struct tm *gmtime(const time_t *timep)
 
 int *__errno_location(void)
 {
-    static int fallback;
+    static int fallback; /* если таблица ещё не стоит */
 
     if (api && api->errno_location)
         return api->errno_location();
@@ -370,6 +364,7 @@ int blob_munmap(void *addr, size_t length)
     return (api && api->munmap_fn) ? api->munmap_fn(addr, length) : -1;
 }
 
+/* библиотеки зовут open и strtol, а не blob_* */
 __asm__(
     ".globl strtol\n\t.set strtol, blob_strtol\n\t"
     ".globl open\n\t.set open, blob_open\n\t"

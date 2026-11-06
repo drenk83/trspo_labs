@@ -1,5 +1,5 @@
-/* jmp, а не call: setjmp должен запомнить адрес в libpng, а не в этом стабе.
- * Иначе longjmp вернётся сюда и запись PNG сломается. */
+/* jmp, не call: setjmp запоминает адрес libpng, а не этого стаба
+ * три имени: glibc зовёт setjmp, _setjmp или __sigsetjmp */
     .text
     .globl _setjmp
     .globl setjmp
@@ -13,7 +13,7 @@ __sigsetjmp:
     jz 1f
     jmp *%rax
 1:
-    xorl %eax, %eax
+    xorl %eax, %eax   /* таблицы ещё нет, притворяемся что ошибки не было */
     ret
 
     .globl longjmp
@@ -26,4 +26,4 @@ _longjmp:
     jz 1f
     jmp *%rax
 1:
-    ud2
+    ud2               /* longjmp без таблицы прыгать некуда */

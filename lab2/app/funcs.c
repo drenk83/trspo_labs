@@ -19,11 +19,11 @@
 
 static int write_png(const char *path, unsigned char *image, int width, int height)
 {
-    FILE *fp;
-    png_structp png_ptr;
-    png_infop info;
-    /* longjmp откатывает регистры. Без volatile указатель rows после ошибки был бы потерян. */
-    png_bytep * volatile rows = NULL;
+    FILE *fp;            /* выходной png */
+    png_structp png_ptr; /* состояние записи libpng */
+    png_infop info;      /* заголовок ihdr */
+    /* volatile: longjmp затирает регистры, без него rows потеряется */
+    png_bytep * volatile rows = NULL; /* указатели на строки картинки */
 
     fp = fopen(path, "wb");
     if (!fp) {
@@ -45,6 +45,7 @@ static int write_png(const char *path, unsigned char *image, int width, int heig
         return -1;
     }
 
+    /* ненулевой возврат — longjmp из libpng, запись сломалась */
     if (setjmp(*png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf)))) {
         printf("png write failed for '%s'\n", path);
         free(rows);
@@ -82,25 +83,26 @@ static int write_png(const char *path, unsigned char *image, int width, int heig
     return 0;
 }
 
-/* Нарисовать один серый глиф в RGB-буфер. Белый фон, символ темнеет по coverage. */
+/* серый глиф в rgb-буфер: белый фон, символ темнеет по coverage */
 static void paint_glyph(unsigned char *image, int width, int height,
                         int pen_x, int baseline, FT_GlyphSlot glyph)
 {
-    FT_Bitmap *bitmap = &glyph->bitmap;
-    int pitch;
+    FT_Bitmap *bitmap = &glyph->bitmap; /* серый растр глифа */
+    int pitch;                          /* шаг строки, у freetype может быть отрицательным */
 
     if (bitmap->pixel_mode != FT_PIXEL_MODE_GRAY || !bitmap->buffer)
         return;
 
     pitch = bitmap->pitch < 0 ? -bitmap->pitch : bitmap->pitch;
     for (unsigned int row = 0; row < bitmap->rows; row++) {
+        /* y в картинке: базовая линия минус верх глифа плюс строка растра */
         int y = baseline - glyph->bitmap_top + (int)row;
         if (y < 0 || y >= height)
             continue;
         for (unsigned int col = 0; col < bitmap->width; col++) {
-            int x = pen_x + glyph->bitmap_left + (int)col;
-            unsigned char *pixel;
-            unsigned char coverage;
+            int x = pen_x + glyph->bitmap_left + (int)col; /* перо плюс левый выступ */
+            unsigned char *pixel;                          /* три байта rgb одного пикселя */
+            unsigned char coverage;                        /* 0 пусто, 255 глиф закрыл пиксель */
             if (x < 0 || x >= width)
                 continue;
             coverage = bitmap->buffer[row * (unsigned int)pitch + col];
@@ -112,17 +114,17 @@ static void paint_glyph(unsigned char *image, int width, int height,
 
 int render_png(const char *font_path, const char *png_path, const char *text)
 {
-    FT_Library library = NULL;
-    FT_Face face = NULL;
-    unsigned char *image = NULL;
-    int failed = 0;
-    int count = 0;
-    int width = PAD;
-    int ascent;
-    int descent;
-    int height;
-    int baseline;
-    int pen_x = PAD;
+    FT_Library library = NULL;   /* контекст freetype, закрывается в done */
+    FT_Face face = NULL;         /* открытый файл шрифта */
+    unsigned char *image = NULL; /* rgb-буфер, по 3 байта на пиксель */
+    int failed = 0;              /* 1, если ошибка уже напечатана */
+    int count = 0;               /* сколько байт текста рисуем */
+    int width = PAD;             /* ширина картинки, копится по глифам */
+    int ascent;                  /* пиксели над базовой линией */
+    int descent;                 /* пиксели под базовой линией */
+    int height;                  /* высота картинки с полями */
+    int baseline;                /* y базовой линии внутри буфера */
+    int pen_x = PAD;             /* x, куда ставить следующий глиф */
 
     if (!font_path || !png_path || !text) {
         printf("render_png: missing argument\n");
@@ -149,7 +151,7 @@ int render_png(const char *font_path, const char *png_path, const char *text)
     while (text[count] != '\0' && count < TEXT_LIMIT)
         count++;
 
-    /* 26.6: единица FreeType — 1/64 пикселя, поэтому сдвиг на 6. */
+    /* единица freetype — 1/64 пикселя, поэтому сдвиг на 6 */
     ascent = (int)(face->size->metrics.ascender >> 6);
     descent = (int)(-(face->size->metrics.descender >> 6));
     if (ascent < 1)
@@ -159,6 +161,7 @@ int render_png(const char *font_path, const char *png_path, const char *text)
     height = ascent + descent + PAD * 2;
     baseline = PAD + ascent;
 
+    /* первый проход только меряет ширину, буфера ещё нет */
     for (int i = 0; i < count; i++) {
         FT_UInt index = FT_Get_Char_Index(face, (unsigned char)text[i]);
         if (index == 0 || FT_Load_Glyph(face, index, FT_LOAD_DEFAULT) != 0) {
@@ -177,9 +180,10 @@ int render_png(const char *font_path, const char *png_path, const char *text)
     }
     memset(image, 0xFF, (size_t)height * (size_t)width * 3);
 
+    /* второй проход рисует глифы и сдвигает перо */
     for (int i = 0; i < count; i++) {
         FT_UInt index = FT_Get_Char_Index(face, (unsigned char)text[i]);
-        int advance = FONT_PX / 2;
+        int advance = FONT_PX / 2; /* запасная ширина, если глифа нет */
         if (index != 0 && FT_Load_Glyph(face, index, FT_LOAD_RENDER) == 0) {
             paint_glyph(image, width, height, pen_x, baseline, face->glyph);
             advance = (int)(face->glyph->advance.x >> 6);

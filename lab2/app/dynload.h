@@ -1,12 +1,8 @@
 #ifndef DYNLOAD_H
 #define DYNLOAD_H
 
-/*
- * Этот заголовок подключается только при -DMODE_DYNAMIC и только после
- * заголовков FreeType, libpng и zlib.
- * Макросы подменяют обычные имена на указатели, которые заполнит load_libraries().
- * Код рисования при этом пишет FT_New_Face(...), как в статической сборке.
- */
+/* только при -DMODE_DYNAMIC и после заголовков библиотек
+ * макросы подменяют FT_New_Face и остальные имена на указатели ниже */
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -16,6 +12,7 @@
 int load_libraries(void);
 void unload_libraries(void);
 
+/* адреса из dlsym, макросы ниже подставляют их вместо обычных имён */
 extern FT_Error (*p_FT_Init_FreeType)(FT_Library *);
 extern FT_Error (*p_FT_New_Face)(FT_Library, const char *, FT_Long, FT_Face *);
 extern FT_Error (*p_FT_Set_Pixel_Sizes)(FT_Face, FT_UInt, FT_UInt);

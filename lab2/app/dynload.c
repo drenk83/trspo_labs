@@ -28,18 +28,18 @@ void (*p_png_write_image)(png_structrp, png_bytepp);
 void (*p_png_write_end)(png_structrp, png_inforp);
 void (*p_png_destroy_write_struct)(png_structpp, png_infopp);
 
-static void *libz;
-static void *libpng;
-static void *freetype;
+static void *libz;     /* libz.so.1, его грузим первым */
+static void *libpng;   /* libpng.so, ему нужен уже загруженный zlib */
+static void *freetype; /* libfreetype.so, тоже зависит от zlib */
 
-/* Путь к .so рядом с самим бинарником, а не относительно текущей папки. */
+/* .so ищем рядом с бинарником, а не в текущей папке */
 static void *open_beside(const char *filename)
 {
-    char exe[PATH_MAX];
-    char path[PATH_MAX];
-    ssize_t length;
-    char *slash;
-    void *handle;
+    char exe[PATH_MAX];  /* путь к самому бинарнику из /proc/self/exe */
+    char path[PATH_MAX]; /* каталог бинарника плюс имя .so */
+    ssize_t length;      /* сколько байт вернул readlink */
+    char *slash;         /* последний /, отрезает имя файла */
+    void *handle;        /* результат dlopen */
 
     length = readlink("/proc/self/exe", exe, sizeof exe - 1);
     if (length < 0) {
@@ -58,6 +58,7 @@ static void *open_beside(const char *filename)
         return NULL;
     }
 
+    /* NOW — проверить символы сразу, GLOBAL — zlib виден libpng и freetype */
     handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
     if (!handle)
         printf("dlopen %s: %s\n", path, dlerror());
@@ -66,7 +67,7 @@ static void *open_beside(const char *filename)
 
 static int bind(void *lib, const char *name, void *slot)
 {
-    void *symbol;
+    void *symbol; /* адрес функции внутри .so */
 
     dlerror();
     symbol = dlsym(lib, name);
@@ -74,7 +75,7 @@ static int bind(void *lib, const char *name, void *slot)
         printf("dlsym %s failed\n", name);
         return 0;
     }
-    /* dlsym отдаёт void *. В слот кладётся тот же адрес, что у функции. */
+    /* dlsym отдаёт void *, в слот кладём тот же адрес, что у функции */
     memcpy(slot, &symbol, sizeof symbol);
     return 1;
 }
@@ -96,6 +97,7 @@ int load_libraries(void)
 {
     int ok = 1;
 
+    /* zlib раньше остальных: libpng.so и libfreetype.so ищут его символы */
     libz = open_beside("libz.so.1");
     libpng = libz ? open_beside("libpng.so") : NULL;
     freetype = libpng ? open_beside("libfreetype.so") : NULL;

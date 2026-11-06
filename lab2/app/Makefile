@@ -1,14 +1,20 @@
+# Три версии одной программы. Исходники общие, отличаются макросом MODE_*.
+# Объекты лежат в разных каталогах, чтобы флаги не смешивались.
+
 BUILD := ../build
 OBJDIR := object_files
 
-# Заголовки — из установки штатной сборки библиотек, не из исходников.
-INCLUDES := -I../build/prefix/include/freetype2 \
-	-I../build/prefix/include/libpng16 \
-	-I../build/prefix/include -I.
+# Заголовки библиотек — из их исходников, не из установки.
+# pnglibconf.h лежит в libpng/object_files, его создаёт Makefile libpng.
+INCLUDES := -I../freetype/include -I../libpng -I../libpng/object_files -I../zlib -I.
+# Те же ограничения, что у библиотек: blob не может звать __stack_chk_fail.
 HOST_CFLAGS := -Wall -Wextra -O2 -fPIC -fno-stack-protector \
 	-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -MMD -MP $(INCLUDES)
+# -fPIE — код можно загрузить по любому адресу.
+# -fno-builtin — компилятор не подменяет вызовы libc своими вставками.
 BLOB_CFLAGS := $(HOST_CFLAGS) -fPIE -fno-builtin -fno-asynchronous-unwind-tables
 
+# Порядок важен: FreeType и libpng ссылаются на zlib, zlib — ни на кого.
 LIBS := $(BUILD)/libfreetype.a $(BUILD)/libpng.a $(BUILD)/libz.a
 
 .PHONY: static dynamic blob clean
@@ -17,46 +23,36 @@ static: $(BUILD)/app-static
 dynamic: $(BUILD)/app-dynamic
 blob: $(BUILD)/app-blob
 
-$(OBJDIR)/funcs.o: funcs.c funcs.h
+# %.o: %.c — из main.c получается object_files/static/main.o и так далее.
+# -DMODE_STATIC попадает и в funcs.c. Там проверяется только MODE_DYNAMIC,
+# поэтому лишний макрос поведение не меняет.
+$(OBJDIR)/static/%.o: %.c
 	@mkdir -p $(dir $@)
-	gcc $(HOST_CFLAGS) -c funcs.c -o $@
+	gcc $(HOST_CFLAGS) -DMODE_STATIC -c $< -o $@
 
-$(OBJDIR)/static/main.o: main.c funcs.h
+$(OBJDIR)/dynamic/%.o: %.c
 	@mkdir -p $(dir $@)
-	gcc $(HOST_CFLAGS) -DMODE_STATIC -c main.c -o $@
+	gcc $(HOST_CFLAGS) -DMODE_DYNAMIC -c $< -o $@
 
-$(OBJDIR)/dynamic/main.o: main.c funcs.h dynload.h
+# MODE_BLOB смотрит только main.c. На funcs.c и host_shim.c флаг безразличен.
+$(OBJDIR)/blob/%.o: %.c
 	@mkdir -p $(dir $@)
-	gcc $(HOST_CFLAGS) -DMODE_DYNAMIC -c main.c -o $@
+	gcc $(BLOB_CFLAGS) -DMODE_BLOB -c $< -o $@
 
-$(OBJDIR)/dynamic/funcs.o: funcs.c funcs.h dynload.h
+# setjmp_stub.S — ассемблер. Отдельное правило, без флагов C.
+$(OBJDIR)/blob/%.o: %.S
 	@mkdir -p $(dir $@)
-	gcc $(HOST_CFLAGS) -DMODE_DYNAMIC -c funcs.c -o $@
+	gcc -c $< -o $@
 
-$(OBJDIR)/dynamic/dynload.o: dynload.c dynload.h
-	@mkdir -p $(dir $@)
-	gcc $(HOST_CFLAGS) -c dynload.c -o $@
-
-$(OBJDIR)/blob/main.o: main.c funcs.h host_api.h
-	@mkdir -p $(dir $@)
-	gcc $(BLOB_CFLAGS) -DMODE_BLOB -c main.c -o $@
-
-$(OBJDIR)/blob/funcs.o: funcs.c funcs.h
-	@mkdir -p $(dir $@)
-	gcc $(BLOB_CFLAGS) -c funcs.c -o $@
-
-$(OBJDIR)/blob/host_shim.o: host_shim.c host_api.h
-	@mkdir -p $(dir $@)
-	gcc $(BLOB_CFLAGS) -c host_shim.c -o $@
-
-$(OBJDIR)/blob/setjmp_stub.o: setjmp_stub.S
-	@mkdir -p $(dir $@)
-	gcc -c setjmp_stub.S -o $@
-
-$(BUILD)/app-static: $(OBJDIR)/static/main.o $(OBJDIR)/funcs.o $(LIBS)
+# Статически вшиты только три библиотеки. libc и libm остаются динамическими:
+# задание не требует полностью статический бинарник.
+$(BUILD)/app-static: $(OBJDIR)/static/main.o $(OBJDIR)/static/funcs.o $(LIBS)
 	@mkdir -p $(BUILD)
-	gcc -o $@ $(OBJDIR)/static/main.o $(OBJDIR)/funcs.o $(LIBS) -lm
+	gcc -o $@ $(OBJDIR)/static/main.o $(OBJDIR)/static/funcs.o $(LIBS) -lm
 
+# В бинарник библиотеки не попадают. .so в зависимостях нужны, чтобы
+# make перелинковал программу, если библиотека пересобралась.
+# Имена .so открывает dynload.c из каталога самого бинарника.
 $(BUILD)/app-dynamic: $(OBJDIR)/dynamic/main.o $(OBJDIR)/dynamic/funcs.o \
 		$(OBJDIR)/dynamic/dynload.o \
 		$(BUILD)/libz.so.1 $(BUILD)/libpng.so $(BUILD)/libfreetype.so
@@ -64,8 +60,14 @@ $(BUILD)/app-dynamic: $(OBJDIR)/dynamic/main.o $(OBJDIR)/dynamic/funcs.o \
 	gcc -o $@ $(OBJDIR)/dynamic/main.o $(OBJDIR)/dynamic/funcs.o \
 		$(OBJDIR)/dynamic/dynload.o -ldl
 
+# -nostdlib — не линковать libc и стартовые файлы.
+# -e blob_entry — точка входа, не main.
+# --no-dynamic-linker и --no-undefined — нет таблицы импорта.
+# blob.map прячет все символы (local: *), таблицы экспорта тоже нет.
+# -lgcc — вспомогательные функции компилятора, не libc.
 $(BUILD)/app-blob: $(OBJDIR)/blob/main.o $(OBJDIR)/blob/funcs.o \
-		$(OBJDIR)/blob/host_shim.o $(OBJDIR)/blob/setjmp_stub.o $(LIBS) blob.map
+		$(OBJDIR)/blob/host_shim.o $(OBJDIR)/blob/setjmp_stub.o \
+		$(LIBS) blob.map
 	@mkdir -p $(BUILD)
 	gcc -nostdlib -pie -fPIE \
 		-Wl,-e,blob_entry -Wl,--no-dynamic-linker -Wl,--no-undefined \
@@ -77,6 +79,4 @@ $(BUILD)/app-blob: $(OBJDIR)/blob/main.o $(OBJDIR)/blob/funcs.o \
 clean:
 	rm -rf $(OBJDIR)
 
--include $(OBJDIR)/funcs.d $(OBJDIR)/static/main.d \
-	$(OBJDIR)/dynamic/main.d $(OBJDIR)/dynamic/funcs.d $(OBJDIR)/dynamic/dynload.d \
-	$(OBJDIR)/blob/main.d $(OBJDIR)/blob/funcs.d $(OBJDIR)/blob/host_shim.d
+-include $(wildcard $(OBJDIR)/*/*.d)

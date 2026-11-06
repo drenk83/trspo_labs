@@ -15,7 +15,7 @@
 
 extern int _setjmp(jmp_buf env);
 
-/* Дескриптор blob-файла для pread-колбэка elfload. Загрузчик однопоточный. */
+/* дескриптор blob-файла для колбэка pread, загрузчик однопоточный */
 static int blob_fd = -1;
 
 static bool pread_cb(el_ctx *ctx, void *dest, size_t nb, size_t offset)
@@ -27,7 +27,7 @@ static bool pread_cb(el_ctx *ctx, void *dest, size_t nb, size_t offset)
     return got == (ssize_t)nb;
 }
 
-/* elfload уже отобразил память целиком; колбэк только возвращает адрес. */
+/* память уже отображена целиком, колбэк только возвращает адрес */
 static void *alloc_cb(el_ctx *ctx, Elf_Addr phys, Elf_Addr virt, Elf_Addr size)
 {
     (void)ctx;
@@ -66,7 +66,7 @@ static const char *status_name(el_status status)
     }
 }
 
-/* Настоящие функции libc этого процесса. Blob получит их указателями. */
+/* настоящие функции libc этого процесса, blob получит их указателями */
 static void fill_api(struct host_api *api)
 {
     memset(api, 0, sizeof *api);
@@ -118,6 +118,7 @@ static void fill_api(struct host_api *api)
     api->setjmp_fn = _setjmp;
     api->longjmp_fn = longjmp;
     api->errno_location = __errno_location;
+    /* open и fcntl в libc с переменным числом аргументов, в таблице сигнатура фиксирована */
     api->open_fn = (int (*)(const char *, int, mode_t))open;
     api->close_fn = close;
     api->read_fn = read;
@@ -132,12 +133,12 @@ static void fill_api(struct host_api *api)
 
 int main(int argc, char **argv)
 {
-    el_ctx ctx;
-    el_status status;
-    struct blob_params params;
-    unsigned char *mapping;
-    size_t map_size;
-    int (*entry)(struct blob_params *);
+    el_ctx ctx;                         /* разбор elf, его заполняет elfload */
+    el_status status;                   /* код последней операции elfload */
+    struct blob_params params;          /* пути, текст и таблица libc для blob */
+    unsigned char *mapping;             /* память, куда копируется blob */
+    size_t map_size;                    /* её размер, равен ctx.memsz */
+    int (*entry)(struct blob_params *); /* адрес blob_entry после загрузки */
 
     if (argc != 5) {
         printf("usage: %s blob font png text\n", argc > 0 ? argv[0] : "elfloader");
@@ -167,6 +168,7 @@ int main(int argc, char **argv)
     }
 
     map_size = (size_t)ctx.memsz;
+    /* rwx сразу: сюда пишем сегменты, потом исполняем blob_entry */
     mapping = mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (mapping == MAP_FAILED) {
@@ -175,6 +177,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
+    /* оба адреса — начало mapping: blob собран как pie и грузится целиком */
     ctx.base_load_paddr = ctx.base_load_vaddr = (Elf_Addr)(uintptr_t)mapping;
 
     status = el_load(&ctx, alloc_cb);
@@ -199,6 +202,7 @@ int main(int argc, char **argv)
     params.text = argv[4];
     fill_api(&params.api);
 
+    /* e_entry — смещение от начала файла, в памяти это база плюс смещение */
     entry = (int (*)(struct blob_params *))((uintptr_t)mapping +
                                             (uintptr_t)ctx.ehdr.e_entry);
     entry(&params);

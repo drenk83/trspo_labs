@@ -78,7 +78,7 @@ readelf -d build/app-blob
 - file показывает ELF 64-bit, static-pie;
 - readelf -h показывает Type DYN и Entry point 0x8040;
 - readelf -d не содержит NEEDED;
-- в динамической секции видно RELACOUNT 1308.
+- в динамической секции видно RELACOUNT 1311.
 
 Как оформить:
 Первый из двух скриншотов для проверки blob. Подпись в отчёте: «Рисунок 4 — Проверка заголовка и динамической секции blob-файла». Вставь подряд с рисунком 5.
@@ -94,7 +94,7 @@ readelf -sW build/app-blob | grep blob_entry
 readelf -lW build/app-blob | grep -E 'LOAD|INTERP|STACK|DYNAMIC'
 
 Что должно быть видно:
-- readelf -r показывает 1308 R_X86_64_RELATIVE;
+- readelf -r показывает 1311 R_X86_64_RELATIVE;
 - readelf --dyn-syms показывает только нулевую запись, без экспортируемых символов;
 - readelf -sW показывает blob_entry как локальный символ с адресом 0x8040;
 - readelf -l не содержит INTERP, есть PT_LOAD, PT_DYNAMIC и GNU_STACK.

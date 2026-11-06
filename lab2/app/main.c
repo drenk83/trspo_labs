@@ -10,8 +10,7 @@
 #include "host_api.h"
 #endif
 
-/* Один исходник на три сборки. Режим выбирает флаг компилятора:
- * -DMODE_STATIC, -DMODE_DYNAMIC или -DMODE_BLOB. */
+/* один исходник на три сборки, режим задаёт -DMODE_STATIC, DYNAMIC или BLOB */
 
 static double seconds_between(const struct timespec *a, const struct timespec *b)
 {
@@ -29,17 +28,17 @@ static void print_span(const char *label, const struct timespec *from,
 
 int blob_entry(struct blob_params *params)
 {
-    struct timespec start;
-    struct timespec loaded;
-    struct timespec now;
+    struct timespec start;  /* вход в blob_entry */
+    struct timespec loaded; /* библиотеки уже вшиты, загрузки нет */
+    struct timespec now;    /* конец рисования */
 
     if (!params || !params->font_path || !params->png_path || !params->text ||
         !params->api.vprintf)
         return 0;
 
+    /* без таблицы printf и malloc внутри библиотек некуда звать */
     host_install(&params->api);
     clock_gettime(CLOCK_MONOTONIC, &start);
-    /* Библиотеки уже внутри файла. Отдельной загрузки в blob_entry нет. */
     loaded = start;
     print_span("load", &start, &loaded);
     render_png(params->font_path, params->png_path, params->text);
@@ -52,10 +51,10 @@ int blob_entry(struct blob_params *params)
 
 int main(int argc, char **argv)
 {
-    struct timespec start;
-    struct timespec loaded;
-    struct timespec now;
-    const char *program = (argc > 0 && argv[0]) ? argv[0] : "app";
+    struct timespec start;  /* вход в main, до dlopen */
+    struct timespec loaded; /* момент, когда библиотеки уже доступны */
+    struct timespec now;    /* конец рисования */
+    const char *program = (argc > 0 && argv[0]) ? argv[0] : "app"; /* имя в usage */
 
     clock_gettime(CLOCK_MONOTONIC, &start);
     if (argc != 4) {
