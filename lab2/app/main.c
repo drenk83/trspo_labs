@@ -10,14 +10,14 @@
 #include "host_api.h"
 #endif
 
-/* один исходник на три сборки, режим задаёт -DMODE_STATIC, DYNAMIC или BLOB */
-
+/* Вычисляет разницу между двумя моментами времени в секундах */
 static double seconds_between(const struct timespec *a, const struct timespec *b)
 {
     return (double)(b->tv_sec - a->tv_sec) +
            (double)(b->tv_nsec - a->tv_nsec) / 1000000000.0;
 }
 
+/* Печатает разницу между двумя моментами времени в секундах */
 static void print_span(const char *label, const struct timespec *from,
                        const struct timespec *to)
 {
@@ -28,15 +28,15 @@ static void print_span(const char *label, const struct timespec *from,
 
 int blob_entry(struct blob_params *params)
 {
-    struct timespec start;  /* вход в blob_entry */
-    struct timespec loaded; /* библиотеки уже вшиты, загрузки нет */
-    struct timespec now;    /* конец рисования */
+    struct timespec start;
+    struct timespec loaded;
+    struct timespec now;
 
     if (!params || !params->font_path || !params->png_path || !params->text ||
         !params->api.vprintf)
         return 0;
 
-    /* без таблицы printf и malloc внутри библиотек некуда звать */
+    /* Устанавливаем API хоста для blob */
     host_install(&params->api);
     clock_gettime(CLOCK_MONOTONIC, &start);
     loaded = start;
@@ -51,13 +51,15 @@ int blob_entry(struct blob_params *params)
 
 int main(int argc, char **argv)
 {
-    struct timespec start;  /* вход в main, до dlopen */
-    struct timespec loaded; /* момент, когда библиотеки уже доступны */
-    struct timespec now;    /* конец рисования */
+    struct timespec start;
+    struct timespec loaded;
+    struct timespec now;
     const char *program = (argc > 0 && argv[0]) ? argv[0] : "app"; /* имя в usage */
 
+    /* Засекаем время начала работы программы */
     clock_gettime(CLOCK_MONOTONIC, &start);
-    if (argc != 4) {
+    if (argc != 4)
+    {
         printf("usage: %s font png text\n", program);
         print_span("load", &start, &start);
         print_span("total", &start, &start);
@@ -65,7 +67,8 @@ int main(int argc, char **argv)
     }
 
 #ifdef MODE_DYNAMIC
-    if (!load_libraries()) {
+    if (!load_libraries())
+    {
         clock_gettime(CLOCK_MONOTONIC, &now);
         print_span("load", &start, &now);
         print_span("total", &start, &now);

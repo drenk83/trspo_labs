@@ -39,10 +39,12 @@ FILE *stdout; /* обычный вывод, его тоже даёт загру�
 
 static const struct host_api *api; /* таблица, её ставит host_install */
 
+/* Устанавливает таблицу функций хоста для blob */
 void host_install(const struct host_api *src)
 {
     api = src;
-    if (src) {
+    if (src)
+    {
         stderr = src->stderr_file;
         stdout = src->stdout_file;
     }

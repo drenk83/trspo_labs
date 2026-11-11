@@ -13,32 +13,38 @@
 #include "dynload.h"
 #endif
 
-#define FONT_PX 48
-#define PAD 8
-#define TEXT_LIMIT 200
+#define FONT_PX 48     /* размер шрифта в пикселях */
+#define PAD 8          /* поля вокруг текста в пикселях */
+#define TEXT_LIMIT 200 /* сколько байт текста рисуем, больше не нужно */
 
+/* Записывает изображение в файл PNG */
 static int write_png(const char *path, unsigned char *image, int width, int height)
 {
     FILE *fp;            /* выходной png */
     png_structp png_ptr; /* состояние записи libpng */
     png_infop info;      /* заголовок ihdr */
     /* volatile: longjmp затирает регистры, без него rows потеряется */
-    png_bytep * volatile rows = NULL; /* указатели на строки картинки */
+    png_bytep *volatile rows = NULL; /* указатели на строки картинки */
 
     fp = fopen(path, "wb");
-    if (!fp) {
+    if (!fp)
+    {
         printf("cannot create png '%s'\n", path);
         return -1;
     }
 
+    /* png_create_write_struct возвращает NULL при нехватке памяти */
     png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png_ptr) {
+    if (!png_ptr)
+    {
         printf("png_create_write_struct failed\n");
         fclose(fp);
         return -1;
     }
+    /* png_create_info_struct возвращает NULL при нехватке памяти */
     info = png_create_info_struct(png_ptr);
-    if (!info) {
+    if (!info)
+    {
         printf("png_create_info_struct failed\n");
         png_destroy_write_struct(&png_ptr, NULL);
         fclose(fp);
@@ -46,7 +52,8 @@ static int write_png(const char *path, unsigned char *image, int width, int heig
     }
 
     /* ненулевой возврат — longjmp из libpng, запись сломалась */
-    if (setjmp(*png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf)))) {
+    if (setjmp(*png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))))
+    {
         printf("png write failed for '%s'\n", path);
         free(rows);
         png_destroy_write_struct(&png_ptr, &info);
@@ -60,7 +67,8 @@ static int write_png(const char *path, unsigned char *image, int width, int heig
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
     rows = malloc((size_t)height * sizeof(png_bytep));
-    if (!rows) {
+    if (!rows)
+    {
         printf("out of memory\n");
         png_destroy_write_struct(&png_ptr, &info);
         fclose(fp);
@@ -76,7 +84,8 @@ static int write_png(const char *path, unsigned char *image, int width, int heig
     free(rows);
     rows = NULL;
     png_destroy_write_struct(&png_ptr, &info);
-    if (fclose(fp) != 0) {
+    if (fclose(fp) != 0)
+    {
         printf("cannot close png '%s'\n", path);
         return -1;
     }
@@ -94,12 +103,14 @@ static void paint_glyph(unsigned char *image, int width, int height,
         return;
 
     pitch = bitmap->pitch < 0 ? -bitmap->pitch : bitmap->pitch;
-    for (unsigned int row = 0; row < bitmap->rows; row++) {
+    for (unsigned int row = 0; row < bitmap->rows; row++)
+    {
         /* y в картинке: базовая линия минус верх глифа плюс строка растра */
         int y = baseline - glyph->bitmap_top + (int)row;
         if (y < 0 || y >= height)
             continue;
-        for (unsigned int col = 0; col < bitmap->width; col++) {
+        for (unsigned int col = 0; col < bitmap->width; col++)
+        {
             int x = pen_x + glyph->bitmap_left + (int)col; /* перо плюс левый выступ */
             unsigned char *pixel;                          /* три байта rgb одного пикселя */
             unsigned char coverage;                        /* 0 пусто, 255 глиф закрыл пиксель */
@@ -112,6 +123,7 @@ static void paint_glyph(unsigned char *image, int width, int height,
     }
 }
 
+/* Рисует текст в PNG, используя freetype и libpng */
 int render_png(const char *font_path, const char *png_path, const char *text)
 {
     FT_Library library = NULL;   /* контекст freetype, закрывается в done */
@@ -126,23 +138,27 @@ int render_png(const char *font_path, const char *png_path, const char *text)
     int baseline;                /* y базовой линии внутри буфера */
     int pen_x = PAD;             /* x, куда ставить следующий глиф */
 
-    if (!font_path || !png_path || !text) {
+    if (!font_path || !png_path || !text)
+    {
         printf("render_png: missing argument\n");
         return -1;
     }
 
     printf("zlib %s\n", zlibVersion());
 
-    if (FT_Init_FreeType(&library) != 0) {
+    if (FT_Init_FreeType(&library) != 0)
+    {
         printf("FT_Init_FreeType failed\n");
         return -1;
     }
-    if (FT_New_Face(library, font_path, 0, &face) != 0) {
+    if (FT_New_Face(library, font_path, 0, &face) != 0)
+    {
         printf("cannot open font '%s'\n", font_path);
         failed = 1;
         goto done;
     }
-    if (FT_Set_Pixel_Sizes(face, 0, FONT_PX) != 0) {
+    if (FT_Set_Pixel_Sizes(face, 0, FONT_PX) != 0)
+    {
         printf("FT_Set_Pixel_Sizes failed\n");
         failed = 1;
         goto done;
@@ -151,20 +167,26 @@ int render_png(const char *font_path, const char *png_path, const char *text)
     while (text[count] != '\0' && count < TEXT_LIMIT)
         count++;
 
-    /* единица freetype — 1/64 пикселя, поэтому сдвиг на 6 */
+    /* высота глифов в пикселях, берём из метрик шрифта */
     ascent = (int)(face->size->metrics.ascender >> 6);
+    /* descender в метриках отрицательный, но нам нужна положительная высота */
     descent = (int)(-(face->size->metrics.descender >> 6));
     if (ascent < 1)
         ascent = FONT_PX;
     if (descent < 0)
         descent = 0;
+
+    /* высота картинки: ascender + descender + поля сверху и снизу */
     height = ascent + descent + PAD * 2;
+    /* базовая линия в буфере: сверху плюс ascender */
     baseline = PAD + ascent;
 
     /* первый проход только меряет ширину, буфера ещё нет */
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         FT_UInt index = FT_Get_Char_Index(face, (unsigned char)text[i]);
-        if (index == 0 || FT_Load_Glyph(face, index, FT_LOAD_DEFAULT) != 0) {
+        if (index == 0 || FT_Load_Glyph(face, index, FT_LOAD_DEFAULT) != 0)
+        {
             width += FONT_PX / 2;
             continue;
         }
@@ -172,8 +194,10 @@ int render_png(const char *font_path, const char *png_path, const char *text)
     }
     width += PAD;
 
+    /* rgb-буфер: три байта на пиксель, белый фон */
     image = malloc((size_t)height * (size_t)width * 3);
-    if (!image) {
+    if (!image)
+    {
         printf("out of memory\n");
         failed = 1;
         goto done;
@@ -181,10 +205,12 @@ int render_png(const char *font_path, const char *png_path, const char *text)
     memset(image, 0xFF, (size_t)height * (size_t)width * 3);
 
     /* второй проход рисует глифы и сдвигает перо */
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         FT_UInt index = FT_Get_Char_Index(face, (unsigned char)text[i]);
         int advance = FONT_PX / 2; /* запасная ширина, если глифа нет */
-        if (index != 0 && FT_Load_Glyph(face, index, FT_LOAD_RENDER) == 0) {
+        if (index != 0 && FT_Load_Glyph(face, index, FT_LOAD_RENDER) == 0)
+        {
             paint_glyph(image, width, height, pen_x, baseline, face->glyph);
             advance = (int)(face->glyph->advance.x >> 6);
             if (advance <= 0)
@@ -193,6 +219,7 @@ int render_png(const char *font_path, const char *png_path, const char *text)
         pen_x += advance;
     }
 
+    /* пишем PNG, если не было ошибок */
     if (write_png(png_path, image, width, height) != 0)
         failed = 1;
 

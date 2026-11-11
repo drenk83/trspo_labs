@@ -42,18 +42,21 @@ static void *open_beside(const char *filename)
     void *handle;        /* результат dlopen */
 
     length = readlink("/proc/self/exe", exe, sizeof exe - 1);
-    if (length < 0) {
+    if (length < 0)
+    {
         printf("cannot read /proc/self/exe\n");
         return NULL;
     }
     exe[length] = '\0';
     slash = strrchr(exe, '/');
-    if (!slash) {
+    if (!slash)
+    {
         printf("cannot resolve path to %s\n", filename);
         return NULL;
     }
     *slash = '\0';
-    if (snprintf(path, sizeof path, "%s/%s", exe, filename) >= (int)sizeof path) {
+    if (snprintf(path, sizeof path, "%s/%s", exe, filename) >= (int)sizeof path)
+    {
         printf("path to %s is too long\n", filename);
         return NULL;
     }
@@ -65,13 +68,16 @@ static void *open_beside(const char *filename)
     return handle;
 }
 
+/* dlsym ищет символ в .so, кладёт его адрес в слот */
 static int bind(void *lib, const char *name, void *slot)
 {
     void *symbol; /* адрес функции внутри .so */
 
+    /* dlsym возвращает NULL и пишет в dlerror, если символ не найден */
     dlerror();
     symbol = dlsym(lib, name);
-    if (dlerror() != NULL || symbol == NULL) {
+    if (dlerror() != NULL || symbol == NULL)
+    {
         printf("dlsym %s failed\n", name);
         return 0;
     }
@@ -80,6 +86,7 @@ static int bind(void *lib, const char *name, void *slot)
     return 1;
 }
 
+/* Закрывает все открытые .so и обнуляет указатели */
 void unload_libraries(void)
 {
     if (freetype)
@@ -93,6 +100,7 @@ void unload_libraries(void)
     libz = NULL;
 }
 
+/* Загружает .so и связывает функции с указателями */
 int load_libraries(void)
 {
     int ok = 1;
@@ -101,7 +109,8 @@ int load_libraries(void)
     libz = open_beside("libz.so.1");
     libpng = libz ? open_beside("libpng.so") : NULL;
     freetype = libpng ? open_beside("libfreetype.so") : NULL;
-    if (!libz || !libpng || !freetype) {
+    if (!libz || !libpng || !freetype)
+    {
         unload_libraries();
         return 0;
     }

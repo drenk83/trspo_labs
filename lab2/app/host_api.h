@@ -2,7 +2,6 @@
 #define HOST_API_H
 
 /* таблица libc: её заполняет elfloader и отдаёт в blob_entry */
-
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>

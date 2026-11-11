@@ -23,23 +23,27 @@ static int read_file(const char *path, void **buf, size_t *len)
     fd = open(path, O_RDONLY);
     if (fd < 0)
         return -1;
-    if (fstat(fd, &st) != 0 || st.st_size <= 0) {
+    if (fstat(fd, &st) != 0 || st.st_size <= 0)
+    {
         close(fd);
         return -1;
     }
 
     data = malloc((size_t)st.st_size);
-    if (!data) {
+    if (!data)
+    {
         close(fd);
         return -1;
     }
 
     got = 0;
-    while (got < (size_t)st.st_size) {
+    while (got < (size_t)st.st_size)
+    {
         ssize_t n;
 
         n = read(fd, data + got, (size_t)st.st_size - got);
-        if (n < 0) {
+        if (n < 0)
+        {
             free(data);
             close(fd);
             return -1;
@@ -49,7 +53,8 @@ static int read_file(const char *path, void **buf, size_t *len)
         got += (size_t)n;
     }
     close(fd);
-    if (got != (size_t)st.st_size) {
+    if (got != (size_t)st.st_size)
+    {
         free(data);
         return -1;
     }
@@ -133,29 +138,36 @@ int main(int argc, char **argv)
     int (*entry)(struct blob_params *); /* адрес blob_entry после загрузки */
     const char *name;                   /* имя модуля для unload */
 
-    if (argc != 5) {
+    if (argc != 5)
+    {
         printf("usage: %s blob font png text\n", argc > 0 ? argv[0] : "elfloader");
         return 0;
     }
 
-    if (read_file(argv[1], &bin, &len) != 0) {
+    /* читаем весь blob в память, потом загрузчик сам разложит сегменты */
+    if (read_file(argv[1], &bin, &len) != 0)
+    {
         printf("cannot open blob '%s': %s\n", argv[1], strerror(errno));
         return 0;
     }
 
+    /* загружаем blob в память, делаем релокации и ищем точку входа */
     name = filename_from_path(argv[1]);
     module = load_elf_module(name, bin, len);
     free(bin);
-    if (!module) {
+    if (!module)
+    {
         printf("cannot load blob '%s'\n", argv[1]);
         return 0;
     }
-    if (module->entry == 0) {
+    if (module->entry == 0)
+    {
         printf("blob has no entry point\n");
         unload_elf_module(name);
         return 0;
     }
 
+    /* заполняем таблицу libc */
     memset(&params, 0, sizeof params);
     params.font_path = argv[2];
     params.png_path = argv[3];
