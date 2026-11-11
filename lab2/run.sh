@@ -1,5 +1,4 @@
 #!/bin/sh
-cd "$(dirname "$0")"
 
 ./build/app-static  font.ttf out-static.png  TRSPO
 ./build/app-dynamic font.ttf out-dynamic.png TRSPO
