@@ -1,10 +1,3 @@
-# Своя сборка FreeType по docs/INSTALL.ANY.
-# Один укрупнённый .c на модуль из include/freetype/config/ftmodule.h,
-# плюс ftgzip.c и ftlzw.c (их зовут драйверы, хотя в ftmodule.h их нет).
-#
-# Системный слой — src/base/ftsystem.c: открывает шрифт через fopen.
-# builds/unix/ftsystem.c не берём: ему нужен ftconfig.h от configure.
-
 BUILD := ../build
 # -std=gnu11: при стандарте C23 glibc подменяет strtol на __isoc23_strtol,
 # а blob определяет только имя strtol.
@@ -13,14 +6,14 @@ BUILD := ../build
 #   Иначе имена inflate/crc32 столкнутся с libz.a.
 # bzip2, встроенный PNG и harfbuzz в ftoption.h уже выключены.
 CFLAGS := -std=gnu11 -O2 -fPIC -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 \
-	-MMD -MP -Iinclude -I../zlib -DFT2_BUILD_LIBRARY -DFT_CONFIG_OPTION_SYSTEM_ZLIB
+	-Iinclude -I../zlib -DFT2_BUILD_LIBRARY -DFT_CONFIG_OPTION_SYSTEM_ZLIB
 
 .PHONY: static dynamic blob clean
 
 static blob: $(BUILD)/libfreetype.a
 dynamic: $(BUILD)/libfreetype.so
 
-# Имя .o — это имя .c без каталога. Путь к исходнику указан ниже.
+# Имя .o — это имя .c без каталога
 OBJS := \
 	object_files/ftsystem.o object_files/ftinit.o object_files/ftdebug.o \
 	object_files/ftbase.o object_files/ftbitmap.o object_files/ftglyph.o \
@@ -56,18 +49,18 @@ object_files/smooth.o: src/smooth/smooth.c
 object_files/ftgzip.o: src/gzip/ftgzip.c
 object_files/ftlzw.o: src/lzw/ftlzw.c
 
-# Общий рецепт. $< берётся из строк «object_files/….o: путь/файл.c» выше.
-# Отдельного шаблона %.o: %.c нет: исходники лежат в разных каталогах.
 object_files/%.o:
 	@mkdir -p $(dir $@)
 	gcc $(CFLAGS) -c $< -o $@
 
+# Создаёт статическую библиотеку libfreetype.a
+# ar rcs: r заменить/добавить .o, c создать архив, s построить индекс
 $(BUILD)/libfreetype.a: $(OBJS)
 	@mkdir -p $(BUILD)
 	ar rcs $@ $(OBJS)
 
-# -lz — сжатые таблицы шрифта через наш zlib.
-# -lm — математика растеризатора.
+# -lz подключает zlib
+# -lm подключает libm (pow, floor)
 $(BUILD)/libfreetype.so: $(OBJS) $(BUILD)/libz.so.1
 	@mkdir -p $(BUILD)
 	gcc -shared -Wl,-soname,libfreetype.so -Wl,-rpath,'$$ORIGIN' \
@@ -76,5 +69,3 @@ $(BUILD)/libfreetype.so: $(OBJS) $(BUILD)/libz.so.1
 clean:
 	rm -rf object_files
 	rm -f $(BUILD)/libfreetype.a $(BUILD)/libfreetype.so
-
--include $(wildcard object_files/*.d)

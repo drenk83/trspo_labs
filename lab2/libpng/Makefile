@@ -25,9 +25,9 @@ $(BUILD)/libpng.a: $(OBJS)
 	ar rcs $@ $(OBJS)
 
 # soname libpng.so — то имя, которое потом открывает app-dynamic
-# L$(BUILD) добавляет ../build в поиск библиотек
+# -L$(BUILD) добавляет ../build в поиск библиотек
 # -lz подключает zlib
-# -lm подключает math.h
+# -lm подключает libm (pow, floor)
 # $ORIGIN — каталог, где лежит сама libpng.so
 $(BUILD)/libpng.so: $(OBJS) $(BUILD)/libz.so.1
 	@mkdir -p $(BUILD)
