@@ -2,8 +2,8 @@ BUILD := ../build
 OBJDIR := object_files
 
 # Заголовки библиотек — из их исходников, не из установки.
-# pnglibconf.h лежит в libpng/object_files, его создаёт Makefile libpng.
-INCLUDES := -I../freetype/include -I../libpng -I../libpng/object_files -I../zlib -I.
+# pnglibconf.h лежит рядом с остальными заголовками libpng.
+INCLUDES := -I../freetype/include -I../libpng -I../zlib -I.
 # Те же ограничения, что у библиотек: blob не может звать __stack_chk_fail.
 HOST_CFLAGS := -Wall -Wextra -O2 -fPIC -fno-stack-protector \
 	-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -MMD -MP $(INCLUDES)
