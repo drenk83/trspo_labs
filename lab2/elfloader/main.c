@@ -1,10 +1,9 @@
 #include "host_api.h"
-#include "elfload.h"
+#include "elf_loader.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,57 +12,51 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-extern int _setjmp(jmp_buf env);
-
-/* дескриптор blob-файла для колбэка pread, загрузчик однопоточный */
-static int blob_fd = -1;
-
-static bool pread_cb(el_ctx *ctx, void *dest, size_t nb, size_t offset)
+/* файл blob целиком: загрузчик потом копирует сегменты в свою память */
+static int read_file(const char *path, void **buf, size_t *len)
 {
-    ssize_t got;
+    int fd;
+    struct stat st;
+    unsigned char *data;
+    size_t got;
 
-    (void)ctx;
-    got = pread(blob_fd, dest, nb, (off_t)offset);
-    return got == (ssize_t)nb;
-}
-
-/* память уже отображена целиком, колбэк только возвращает адрес */
-static void *alloc_cb(el_ctx *ctx, Elf_Addr phys, Elf_Addr virt, Elf_Addr size)
-{
-    (void)ctx;
-    (void)phys;
-    (void)size;
-    return (void *)(uintptr_t)virt;
-}
-
-static const char *status_name(el_status status)
-{
-    switch (status) {
-    case EL_OK:
-        return "OK";
-    case EL_EIO:
-        return "read error";
-    case EL_ENOMEM:
-        return "out of memory";
-    case EL_NOTELF:
-        return "not an ELF file";
-    case EL_WRONGBITS:
-        return "wrong ELF class";
-    case EL_WRONGENDIAN:
-        return "wrong byte order";
-    case EL_WRONGARCH:
-        return "wrong architecture";
-    case EL_WRONGOS:
-        return "wrong OS ABI";
-    case EL_NOTEXEC:
-        return "not an executable";
-    case EL_NODYN:
-        return "no dynamic section";
-    case EL_BADREL:
-        return "bad relocation";
-    default:
-        return "unknown error";
+    fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return -1;
+    if (fstat(fd, &st) != 0 || st.st_size <= 0) {
+        close(fd);
+        return -1;
     }
+
+    data = malloc((size_t)st.st_size);
+    if (!data) {
+        close(fd);
+        return -1;
+    }
+
+    got = 0;
+    while (got < (size_t)st.st_size) {
+        ssize_t n;
+
+        n = read(fd, data + got, (size_t)st.st_size - got);
+        if (n < 0) {
+            free(data);
+            close(fd);
+            return -1;
+        }
+        if (n == 0)
+            break;
+        got += (size_t)n;
+    }
+    close(fd);
+    if (got != (size_t)st.st_size) {
+        free(data);
+        return -1;
+    }
+
+    *buf = data;
+    *len = got;
+    return 0;
 }
 
 /* настоящие функции libc этого процесса, blob получит их указателями */
@@ -133,66 +126,33 @@ static void fill_api(struct host_api *api)
 
 int main(int argc, char **argv)
 {
-    el_ctx ctx;                         /* разбор elf, его заполняет elfload */
-    el_status status;                   /* код последней операции elfload */
+    void *bin;                          /* байты файла app-blob */
+    size_t len;                         /* сколько байт прочитали */
+    struct elf_module *module;          /* образ после релокаций */
     struct blob_params params;          /* пути, текст и таблица libc для blob */
-    unsigned char *mapping;             /* память, куда копируется blob */
-    size_t map_size;                    /* её размер, равен ctx.memsz */
     int (*entry)(struct blob_params *); /* адрес blob_entry после загрузки */
+    const char *name;                   /* имя модуля для unload */
 
     if (argc != 5) {
         printf("usage: %s blob font png text\n", argc > 0 ? argv[0] : "elfloader");
         return 0;
     }
 
-    blob_fd = open(argv[1], O_RDONLY);
-    if (blob_fd < 0) {
+    if (read_file(argv[1], &bin, &len) != 0) {
         printf("cannot open blob '%s': %s\n", argv[1], strerror(errno));
         return 0;
     }
 
-    memset(&ctx, 0, sizeof ctx);
-    ctx.pread = pread_cb;
-
-    status = el_init(&ctx);
-    if (status != EL_OK) {
-        printf("el_init failed: %s (%d)\n", status_name(status), status);
-        close(blob_fd);
+    name = filename_from_path(argv[1]);
+    module = load_elf_module(name, bin, len);
+    free(bin);
+    if (!module) {
+        printf("cannot load blob '%s'\n", argv[1]);
         return 0;
     }
-
-    if (ctx.memsz == 0) {
-        printf("blob has no loadable segments\n");
-        close(blob_fd);
-        return 0;
-    }
-
-    map_size = (size_t)ctx.memsz;
-    /* rwx сразу: сюда пишем сегменты, потом исполняем blob_entry */
-    mapping = mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (mapping == MAP_FAILED) {
-        printf("mmap failed: %s\n", strerror(errno));
-        close(blob_fd);
-        return 0;
-    }
-
-    /* оба адреса — начало mapping: blob собран как pie и грузится целиком */
-    ctx.base_load_paddr = ctx.base_load_vaddr = (Elf_Addr)(uintptr_t)mapping;
-
-    status = el_load(&ctx, alloc_cb);
-    if (status != EL_OK) {
-        printf("el_load failed: %s (%d)\n", status_name(status), status);
-        munmap(mapping, map_size);
-        close(blob_fd);
-        return 0;
-    }
-
-    status = el_relocate(&ctx);
-    if (status != EL_OK) {
-        printf("el_relocate failed: %s (%d)\n", status_name(status), status);
-        munmap(mapping, map_size);
-        close(blob_fd);
+    if (module->entry == 0) {
+        printf("blob has no entry point\n");
+        unload_elf_module(name);
         return 0;
     }
 
@@ -202,12 +162,10 @@ int main(int argc, char **argv)
     params.text = argv[4];
     fill_api(&params.api);
 
-    /* e_entry — смещение от начала файла, в памяти это база плюс смещение */
-    entry = (int (*)(struct blob_params *))((uintptr_t)mapping +
-                                            (uintptr_t)ctx.ehdr.e_entry);
+    /* e_entry уже сложен с базой загрузки внутри load_elf_module */
+    entry = (int (*)(struct blob_params *))module->entry;
     entry(&params);
 
-    munmap(mapping, map_size);
-    close(blob_fd);
+    unload_elf_module(name);
     return 0;
 }

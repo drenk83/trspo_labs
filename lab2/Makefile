@@ -1,20 +1,15 @@
 .PHONY: all static dynamic blob clean clean-bins
 
-# Задание: make all удаляет старые бинарники и собирает все три версии.
-# elfloader собирается вместе с blob.
 all:
 	$(MAKE) clean-bins
 	$(MAKE) static
 	$(MAKE) dynamic
 	$(MAKE) blob
 
-# Только три программы. Библиотеки и elfloader не трогаем:
-# их пересоберёт обычная проверка времени изменения файлов.
 clean-bins:
 	rm -f build/app-static build/app-dynamic build/app-blob
 
-# $(MAKE) -C каталог цель  — зайти в каталог и выполнить цель.
-# идёт сверху вниз, даже при make -j: это один список команд.
+# $(MAKE) -C <dir> <target> - вызывает make в dir
 static:
 	$(MAKE) -C zlib static
 	$(MAKE) -C libpng static
@@ -27,7 +22,6 @@ dynamic:
 	$(MAKE) -C freetype dynamic
 	$(MAKE) -C app dynamic
 
-# blob вшивает те же .a, что и static, и собирает загрузчик.
 blob:
 	$(MAKE) -C zlib blob
 	$(MAKE) -C libpng blob

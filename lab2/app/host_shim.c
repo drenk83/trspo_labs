@@ -23,9 +23,16 @@
 #undef strcat
 #undef strlen
 #undef stpcpy
-
-int (*host_setjmp_fn)(jmp_buf);       /* куда прыгает стаб setjmp */
-void (*host_longjmp_fn)(jmp_buf, int); /* куда прыгает стаб longjmp */
+#undef strtol
+#undef open
+#undef close
+#undef read
+#undef fcntl
+#undef fstat
+#undef mmap
+#undef munmap
+#undef setjmp
+#undef longjmp
 
 FILE *stderr; /* библиотеки пишут ошибки сюда */
 FILE *stdout; /* обычный вывод, его тоже даёт загрузчик */
@@ -35,8 +42,6 @@ static const struct host_api *api; /* таблица, её ставит host_ins
 void host_install(const struct host_api *src)
 {
     api = src;
-    host_setjmp_fn = src ? src->setjmp_fn : NULL;
-    host_longjmp_fn = src ? src->longjmp_fn : NULL;
     if (src) {
         stderr = src->stderr_file;
         stdout = src->stdout_file;
@@ -199,8 +204,7 @@ char *strerror(int errnum)
     return (api && api->strerror) ? api->strerror(errnum) : (char *)"unknown";
 }
 
-/* имя blob_strtol, а не strtol: иначе glibc подменит его на __isoc23_strtol */
-long blob_strtol(const char *nptr, char **endptr, int base)
+long strtol(const char *nptr, char **endptr, int base)
 {
     return (api && api->strtol) ? api->strtol(nptr, endptr, base) : 0;
 }
@@ -304,6 +308,21 @@ struct tm *gmtime(const time_t *timep)
     return (api && api->gmtime) ? api->gmtime(timep) : NULL;
 }
 
+/* имена внутри blob, снаружи их быть не должно
+ * при ошибке libpng longjmp может вернуться сюда, а не в библиотеку */
+int _setjmp(jmp_buf env)
+{
+    return (api && api->setjmp_fn) ? api->setjmp_fn(env) : 0;
+}
+
+void longjmp(jmp_buf env, int val)
+{
+    if (api && api->longjmp_fn)
+        api->longjmp_fn(env, val);
+    for (;;)
+        ;
+}
+
 int *__errno_location(void)
 {
     static int fallback; /* если таблица ещё не стоит */
@@ -321,22 +340,22 @@ void abort(void)
         ;
 }
 
-int blob_open(const char *path, int flags, ...)
+int open(const char *path, int flags, ...)
 {
     return (api && api->open_fn) ? api->open_fn(path, flags, 0) : -1;
 }
 
-int blob_close(int fd)
+int close(int fd)
 {
     return (api && api->close_fn) ? api->close_fn(fd) : -1;
 }
 
-ssize_t blob_read(int fd, void *buf, size_t count)
+ssize_t read(int fd, void *buf, size_t count)
 {
     return (api && api->read_fn) ? api->read_fn(fd, buf, count) : -1;
 }
 
-int blob_fcntl(int fd, int cmd, ...)
+int fcntl(int fd, int cmd, ...)
 {
     va_list ap;
     int arg;
@@ -347,31 +366,18 @@ int blob_fcntl(int fd, int cmd, ...)
     return (api && api->fcntl_fn) ? api->fcntl_fn(fd, cmd, arg) : -1;
 }
 
-int blob_fstat(int fd, struct stat *st)
+int fstat(int fd, struct stat *st)
 {
     return (api && api->fstat_fn) ? api->fstat_fn(fd, st) : -1;
 }
 
-void *blob_mmap(void *addr, size_t length, int prot, int flags, int fd,
-                       off_t offset)
+void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
     return (api && api->mmap_fn) ? api->mmap_fn(addr, length, prot, flags, fd, offset)
                                  : (void *)-1;
 }
 
-int blob_munmap(void *addr, size_t length)
+int munmap(void *addr, size_t length)
 {
     return (api && api->munmap_fn) ? api->munmap_fn(addr, length) : -1;
 }
-
-/* библиотеки зовут open и strtol, а не blob_* */
-__asm__(
-    ".globl strtol\n\t.set strtol, blob_strtol\n\t"
-    ".globl open\n\t.set open, blob_open\n\t"
-    ".globl close\n\t.set close, blob_close\n\t"
-    ".globl read\n\t.set read, blob_read\n\t"
-    ".globl fcntl\n\t.set fcntl, blob_fcntl\n\t"
-    ".globl fstat\n\t.set fstat, blob_fstat\n\t"
-    ".globl mmap\n\t.set mmap, blob_mmap\n\t"
-    ".globl munmap\n\t.set munmap, blob_munmap\n\t"
-);
